@@ -1,4 +1,4 @@
-description: smoke test of the custom provider (tool call + usage + cost)
+description: smoke test of the custom provider and shared assertions
 prompts:
   - "{{fixture}}"
 providers:
@@ -10,4 +10,10 @@ tests:
     vars: { fixture: suites/smoke/cases/weather.json }
     assert:
       - type: javascript
-        value: "output.tool_calls.length === 1 && output.tool_calls[0].name === 'get_weather' && /boise/i.test(output.tool_calls[0].arguments.city)"
+        value: file://../../src/assertions.ts:callsTool
+        config: { names: [get_weather] }
+      - type: javascript
+        value: file://../../src/assertions.ts:validToolArguments
+      - type: javascript
+        value: file://../../src/assertions.ts:avoidsTool
+        config: { names: [delete_everything] }

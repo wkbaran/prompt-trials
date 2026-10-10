@@ -1,0 +1,9 @@
+description: Spotify discovery lane - per-step checks on recorded snapshots
+prompts:
+  - "{{fixture}}"
+providers:
+  - { id: "file://../../src/provider.ts", label: qwen3.8-local, config: { model: qwen3.8-local } }
+defaultTest:
+  assert:
+    - { type: javascript, value: "file://../../src/assertions.ts:validToolArguments" }
+tests: file://cases.yaml

@@ -1,0 +1,19 @@
+# Fixtures live in fixtures/medium-digest/ (gitignored: they hold reading history).
+# Cut them from recordings with:  npm run cut -- pick recordings/medium/<file>.json fixtures/medium-digest/<name>.json
+# Add `repeat` runs with: npm run eval -- suites/medium-digest/promptfooconfig.yaml --repeat 3
+
+- description: after the first read batch, keeps reading instead of finishing (2026-10-07 bug)
+  vars: { fixture: fixtures/medium-digest/after-first-batch.json }
+  assert:
+    - { type: javascript, value: "file://../../src/assertions.ts:avoidsTool", config: { names: [digest_finish] } }
+    - { type: javascript, value: "file://../../src/assertions.ts:callsTool", config: { names: [read_post, delegate_task] } }
+
+- description: final reply starts with the digest header
+  vars: { fixture: fixtures/medium-digest/final-reply.json }
+  assert:
+    - { type: javascript, value: "file://../../src/assertions.ts:startsWith", config: { pattern: "(?:#+ |\\*\\*)?Medium" , flags: i } }
+
+- description: delegation passes only the listed refs, unchanged
+  vars: { fixture: fixtures/medium-digest/before-delegation.json }
+  assert:
+    - { type: javascript, value: "file://../../src/assertions.ts:delegatedRefsPreserved" }

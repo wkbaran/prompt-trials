@@ -8,7 +8,11 @@
     "node": ">=26"
   },
   "scripts": {
-    "view": "promptfoo view",
+    "eval": "PROMPTFOO_CONFIG_DIR=.promptfoo PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 PROMPTFOO_DISABLE_SHARING=1 promptfoo eval --no-cache -c",
+    "view": "PROMPTFOO_CONFIG_DIR=.promptfoo PROMPTFOO_DISABLE_TELEMETRY=1 promptfoo view",
+    "record": "node src/record-proxy.ts",
+    "cut": "node src/cut.ts",
+    "test": "node --test test/",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

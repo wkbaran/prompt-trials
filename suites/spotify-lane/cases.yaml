@@ -1,0 +1,16 @@
+# Fixtures in fixtures/spotify-lane/ (gitignored).
+- description: does not add tracks that were already added (2026-10-02 duplicates)
+  vars: { fixture: fixtures/spotify-lane/before-second-add.json }
+  assert:
+    - { type: javascript, value: "file://../../src/assertions.ts:noRepeatedItems", config: { name: add_items, key: uris } }
+
+- description: reviews before finishing
+  vars: { fixture: fixtures/spotify-lane/after-delegate.json }
+  assert:
+    - { type: javascript, value: "file://../../src/assertions.ts:avoidsTool", config: { names: [discovery_finish] } }
+    - { type: javascript, value: "file://../../src/assertions.ts:callsTool", config: { names: [discovery_review] } }
+
+- description: final reply is the one-line "Done: lane", not narration
+  vars: { fixture: fixtures/spotify-lane/after-finish.json }
+  assert:
+    - { type: javascript, value: "file://../../src/assertions.ts:startsWith", config: { pattern: "Done" } }

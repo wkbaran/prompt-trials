@@ -1,0 +1,16 @@
+# Fixtures in fixtures/substack-digest/ (gitignored).
+- description: delegation goals carry the listed refs only, unrenumbered (2026-10-03 bug)
+  vars: { fixture: fixtures/substack-digest/before-delegation.json }
+  assert:
+    - { type: javascript, value: "file://../../src/assertions.ts:delegatedRefsPreserved", config: { refPattern: "\\bP\\d+\\b" } }
+
+- description: chat-reading subagent goal does not call the user the author
+  vars: { fixture: fixtures/substack-digest/before-chat-delegation.json }
+  assert:
+    - { type: not-icontains, value: "your own newsletter" }
+    - { type: not-icontains, value: "the author of" }
+
+- description: does not call digest_finish before every section has been handled
+  vars: { fixture: fixtures/substack-digest/mid-run.json }
+  assert:
+    - { type: javascript, value: "file://../../src/assertions.ts:avoidsTool", config: { names: [digest_finish] } }
