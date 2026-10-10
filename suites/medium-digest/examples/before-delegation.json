@@ -1,0 +1,110 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You run a daily reading digest. Call digest_begin, delegate the reading of the posts it lists best-ranked first, then call digest_finish with a one-sentence gist for every post you read. Never finish while ranked posts are still unread. Your final reply starts with the header 'Medium digest'."
+    },
+    {
+      "role": "user",
+      "content": "Run today's digest."
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_1",
+          "type": "function",
+          "function": {
+            "name": "digest_begin",
+            "arguments": "{}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_1",
+      "content": "Run r2 started. Work list:\nF1 (90) Local-first apps\nF2 (86) Reading a flame graph\nF3 (80) A year of gardening notes\nF4 (77) Why tests get slow\nDelegate the posts with delegate_task; pass subagents only the refs."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "digest_begin",
+        "description": "Start a digest run and return the work list.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "delegate_task",
+        "description": "Run subagent tasks in parallel.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "goal": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "goal"
+                ]
+              }
+            }
+          },
+          "required": [
+            "tasks"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "digest_finish",
+        "description": "Finish the run. Gists maps each ref to a one-sentence gist.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "gists": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "gists"
+          ]
+        }
+      }
+    }
+  ],
+  "reference": {
+    "message": {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_2",
+          "type": "function",
+          "function": {
+            "name": "delegate_task",
+            "arguments": "{\"tasks\": [{\"goal\": \"Read F1 and F2 with read_post and return a one-sentence gist for each.\"}, {\"goal\": \"Read F3 and F4 with read_post and return a one-sentence gist for each.\"}]}"
+          }
+        }
+      ]
+    },
+    "finish_reason": "tool_calls"
+  },
+  "source": "synthetic example (invented names and data)"
+}

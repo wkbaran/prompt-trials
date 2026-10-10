@@ -6,3 +6,5 @@ fixtures/
 output/
 .promptfoo/
 *.log
+recordings/
+suites/*/cases.private.yaml

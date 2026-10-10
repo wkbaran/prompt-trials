@@ -7,7 +7,9 @@ import { getModel, loadRegistry } from './registry.js';
  * Promptfoo custom provider. Sends a recorded chat conversation (fixture) to one
  * model from models.yaml and reports tokens, latency and cost per call.
  *
- * Provider config:   { model: "<key in models.yaml>" }
+ * Provider config:   { model: "<key in models.yaml>" }   or   { model: "@reference" }
+ *                    "@reference" needs no model or models.yaml: it returns the answer stored in the
+ *                    fixture, so a suite's assertions can be checked (and demoed) offline.
  * Test vars:         { fixture: "path/to/fixture.json" }   (relative to the working directory)
  * Fixture file:      { messages: [...], tools?: [...], tool_choice?: ... }
  */
@@ -25,6 +27,14 @@ interface Fixture {
   messages: unknown[];
   tools?: unknown[];
   tool_choice?: unknown;
+  /** The answer recorded with the snapshot; `model: "@reference"` replays it instead of calling a model. */
+  reference?: { message?: { content?: string | null; tool_calls?: ToolCall[] }; finish_reason?: string; usage?: Usage };
+}
+
+interface Usage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 }
 
 interface ToolCall {
@@ -56,6 +66,27 @@ export default class PromptTrialsProvider {
       fixture = JSON.parse(readFileSync(resolve(fixturePath), 'utf8')) as Fixture;
     } catch (e) {
       return { error: `cannot read fixture ${fixturePath}: ${(e as Error).message}` };
+    }
+
+    if (this.modelKey === '@reference') {
+      const ref = fixture.reference;
+      if (!ref?.message) return { error: `fixture ${fixturePath} has no reference answer` };
+      return {
+        output: {
+          content: ref.message.content ?? '',
+          tool_calls: (ref.message.tool_calls ?? []).map((c) => ({ name: c.function.name, arguments: safeParse(c.function.arguments) })),
+          finish_reason: ref.finish_reason,
+        },
+        tokenUsage: {
+          prompt: ref.usage?.prompt_tokens ?? 0,
+          completion: ref.usage?.completion_tokens ?? 0,
+          total: ref.usage?.total_tokens ?? 0,
+          numRequests: 0,
+        },
+        cost: 0,
+        latencyMs: 0,
+        metadata: { model: '@reference' },
+      };
     }
 
     const entry = getModel(this.modelKey);

@@ -1,0 +1,110 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You run a daily newsletter digest for a subscriber. Call digest_begin, delegate reading with delegate_task passing subagents only the post refs, then call digest_finish. The user subscribes to these newsletters; they did not write them."
+    },
+    {
+      "role": "user",
+      "content": "Run today's digest."
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_1",
+          "type": "function",
+          "function": {
+            "name": "digest_begin",
+            "arguments": "{}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_1",
+      "content": "Run s2 started. Chat threads with new replies:\nC1 Numbers in plain English: reader questions\nC2 On maintenance: reader stories\nDelegate chat reading with delegate_task."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "digest_begin",
+        "description": "Start a digest run and return the work list.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "delegate_task",
+        "description": "Run subagent tasks in parallel.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "goal": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "goal"
+                ]
+              }
+            }
+          },
+          "required": [
+            "tasks"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "digest_finish",
+        "description": "Finish the run. Gists maps each ref to a one-sentence gist.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "gists": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "gists"
+          ]
+        }
+      }
+    }
+  ],
+  "reference": {
+    "message": {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_2",
+          "type": "function",
+          "function": {
+            "name": "delegate_task",
+            "arguments": "{\"tasks\": [{\"goal\": \"Read chat thread C1 as the subscriber who follows this newsletter (they did not write it) and summarize what readers are asking.\"}, {\"goal\": \"Read chat thread C2 as the subscriber who follows this newsletter (they did not write it) and summarize the stories readers share.\"}]}"
+          }
+        }
+      ]
+    },
+    "finish_reason": "tool_calls"
+  },
+  "source": "synthetic example (invented names and data)"
+}

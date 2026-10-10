@@ -1,16 +1,17 @@
-# Fixtures in fixtures/spotify-lane/ (gitignored).
+# Synthetic examples: every name and post is invented. Real cases built from your own recordings
+# go in cases.private.yaml (gitignored) and point at fixtures/ (also ignored).
 - description: does not add tracks that were already added (2026-10-02 duplicates)
-  vars: { fixture: fixtures/spotify-lane/before-second-add.json }
+  vars: { fixture: suites/spotify-lane/examples/before-second-add.json }
   assert:
     - { type: javascript, value: "file://../../src/assertions.ts:noRepeatedItems", config: { name: add_items, key: uris } }
 
 - description: reviews before finishing
-  vars: { fixture: fixtures/spotify-lane/after-delegate.json }
+  vars: { fixture: suites/spotify-lane/examples/after-delegate.json }
   assert:
     - { type: javascript, value: "file://../../src/assertions.ts:avoidsTool", config: { names: [discovery_finish] } }
     - { type: javascript, value: "file://../../src/assertions.ts:callsTool", config: { names: [discovery_review] } }
 
-- description: final reply is the one-line "Done: lane", not narration
-  vars: { fixture: fixtures/spotify-lane/after-finish.json }
+- description: 'final reply is the one-line "Done: <lane>", not narration'
+  vars: { fixture: suites/spotify-lane/examples/after-finish.json }
   assert:
     - { type: javascript, value: "file://../../src/assertions.ts:startsWith", config: { pattern: "Done" } }

@@ -2,8 +2,13 @@ description: Substack digest cron job - per-step checks on recorded snapshots
 prompts:
   - "{{fixture}}"
 providers:
-  - { id: "file://../../src/provider.ts", label: qwen3.8-local, config: { model: qwen3.8-local } }
+  # Replays the answer stored in each fixture: no model needed, so the assertions can be checked offline.
+  - { id: "file://../../src/provider.ts", label: reference-answer, config: { model: "@reference" } }
+  # Real models: keys come from models.yaml (see models.example.yaml). Uncomment, or add your own.
+  # - { id: "file://../../src/provider.ts", label: qwen3.8-local, config: { model: qwen3.8-local } }
 defaultTest:
   assert:
     - { type: javascript, value: "file://../../src/assertions.ts:validToolArguments" }
-tests: file://cases.yaml
+# cases.yaml holds the committed synthetic examples; cases.private.yaml (gitignored) is for cases
+# built from your own recordings, whose fixtures live in the ignored fixtures/ directory.
+tests: file://cases*.yaml

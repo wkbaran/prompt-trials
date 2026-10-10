@@ -1,0 +1,176 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You run a daily reading digest. Call digest_begin, read the posts it lists best-ranked first, then call digest_finish with a one-sentence gist for every post you read. Never finish while ranked posts are still unread. Your final reply starts with the header 'Medium digest'."
+    },
+    {
+      "role": "user",
+      "content": "Run today's digest."
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_1",
+          "type": "function",
+          "function": {
+            "name": "digest_begin",
+            "arguments": "{}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_1",
+      "content": "Run r1 started. Work list (rank 0-100):\nT1 (94) How small teams ship weekly\nT2 (91) Notes on property-based testing\nY1 (88) A tour of embedded databases\nY2 (84) Why we merged our services back together\nY3 (79) Cast iron basics\nBatch 1: T1, T2. Batch 2: Y1, Y2, Y3. Call digest_finish when every batch is read."
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_2",
+          "type": "function",
+          "function": {
+            "name": "read_post",
+            "arguments": "{\"ref\": \"T1\"}"
+          }
+        },
+        {
+          "id": "call_3",
+          "type": "function",
+          "function": {
+            "name": "read_post",
+            "arguments": "{\"ref\": \"T2\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_2",
+      "content": "T1: A team of four describes weekly releases, feature flags and small pull requests."
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_3",
+      "content": "T2: Property-based tests find edge cases that example tests miss; shows three patterns."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "digest_begin",
+        "description": "Start a digest run and return the work list.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "read_post",
+        "description": "Read one post by its digest ref, e.g. T1.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ref"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "delegate_task",
+        "description": "Run subagent tasks in parallel.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "goal": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "goal"
+                ]
+              }
+            }
+          },
+          "required": [
+            "tasks"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "digest_finish",
+        "description": "Finish the run. Gists maps each ref to a one-sentence gist.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "gists": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "gists"
+          ]
+        }
+      }
+    }
+  ],
+  "reference": {
+    "message": {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_4",
+          "type": "function",
+          "function": {
+            "name": "read_post",
+            "arguments": "{\"ref\": \"Y1\"}"
+          }
+        },
+        {
+          "id": "call_5",
+          "type": "function",
+          "function": {
+            "name": "read_post",
+            "arguments": "{\"ref\": \"Y2\"}"
+          }
+        },
+        {
+          "id": "call_6",
+          "type": "function",
+          "function": {
+            "name": "read_post",
+            "arguments": "{\"ref\": \"Y3\"}"
+          }
+        }
+      ]
+    },
+    "finish_reason": "tool_calls"
+  },
+  "source": "synthetic example (invented names and data)"
+}
