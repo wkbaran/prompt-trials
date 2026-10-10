@@ -1,0 +1,22 @@
+{
+  "name": "prompt-trials",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Run recorded prompt snapshots against candidate models and compare results (promptfoo-based).",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "view": "promptfoo view",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "promptfoo": "^0.124.1",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
+  }
+}

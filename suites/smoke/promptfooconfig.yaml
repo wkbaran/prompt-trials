@@ -1,0 +1,13 @@
+description: smoke test of the custom provider (tool call + usage + cost)
+prompts:
+  - "{{fixture}}"
+providers:
+  - id: file://../../src/provider.ts
+    label: qwen3.8-local
+    config: { model: qwen3.8-local }
+tests:
+  - description: calls get_weather with a city
+    vars: { fixture: suites/smoke/cases/weather.json }
+    assert:
+      - type: javascript
+        value: "output.tool_calls.length === 1 && output.tool_calls[0].name === 'get_weather' && /boise/i.test(output.tool_calls[0].arguments.city)"
