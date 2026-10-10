@@ -1,4 +1,18 @@
-# prompt-trials
+<div align="center">
+
+# Prompt Trials
+
+**Replay the requests your agents really sent against any model, and see which one holds up.**
+
+![Node 26+](https://img.shields.io/badge/node-26%2B-339933?logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![promptfoo](https://img.shields.io/badge/built%20on-promptfoo-orange)
+![LiteLLM](https://img.shields.io/badge/capture-LiteLLM-informational)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+
+[Try it](#try-it-no-model-no-api-key) · [Real models](#run-against-real-models) · [Capture fixtures](#capture-your-own-fixtures) · [Assertions](#assertions) · [Layout](#layout) · [Status](#status-and-ideas)
+
+</div>
 
 Test candidate models against **real requests your agents already sent**, and compare pass rate,
 tokens, latency and cost side by side.
