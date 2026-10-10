@@ -10,7 +10,7 @@
 ![LiteLLM](https://img.shields.io/badge/capture-LiteLLM-informational)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 
-[Try it](#try-it-no-model-no-api-key) · [Real models](#run-against-real-models) · [Capture fixtures](#capture-your-own-fixtures) · [Assertions](#assertions) · [Layout](#layout) · [Status](#status-and-ideas)
+[Concepts](#concepts) · [Try it](#try-it-no-model-no-api-key) · [Real models](#run-against-real-models) · [Capture fixtures](#capture-your-own-fixtures) · [Assertions](#assertions) · [Layout](#layout) · [Status](#status-and-ideas)
 
 </div>
 
@@ -36,6 +36,59 @@ web viewer.
 
 Each request an agent sends carries the whole conversation so far, so every recorded request is
 already a snapshot at a decision point. No special tracing is needed.
+
+## Concepts
+
+- **Fixture**: one frozen moment of an agent run, saved as a JSON file. It holds everything the
+  model saw at that point: the `messages` so far (system prompt, user request, earlier tool calls
+  and their results) and the `tools` it could call. It also keeps a `reference`, the answer the
+  original model gave next. Replaying a fixture against another model asks: *given exactly this
+  situation, what would you do next?* Fixtures are copied from real requests, so they are not
+  committed (they hold personal data); the repo ships synthetic examples instead.
+- **Case**: a fixture plus the assertions that decide whether the next step is right (a promptfoo
+  "test").
+- **Suite**: a folder under `suites/` with a `promptfooconfig.yaml` and its cases, for one kind of
+  job.
+- **Provider**: what sends the fixture to a model (`src/provider.ts`) and reports tokens, latency
+  and cost. `@reference` replays the stored answer with no model at all.
+- **Assertion**: a check on the model's next step, such as which tool it called, with which
+  arguments, or how its reply starts.
+
+A trimmed fixture:
+
+```json
+{
+  "messages": [
+    { "role": "system", "content": "You run a daily digest. Never finish while ranked posts are unread." },
+    { "role": "user", "content": "Run today's digest." },
+    { "role": "assistant", "content": null, "tool_calls": [{ "id": "call_1", "type": "function",
+        "function": { "name": "digest_begin", "arguments": "{}" } }] },
+    { "role": "tool", "tool_call_id": "call_1", "content": "Work list: T1 (94) …  Y1 (88) …" }
+  ],
+  "tools": [{ "type": "function", "function": { "name": "read_post", "parameters": { "...": "..." } } }],
+  "reference": { "message": { "role": "assistant", "tool_calls": [ { "function": { "name": "read_post", "arguments": "{\"ref\":\"T1\"}" } } ] } }
+}
+```
+
+## Built on promptfoo
+
+[promptfoo](https://www.promptfoo.dev/docs/intro/) does the heavy lifting: it runs the matrix of
+cases and models, stores results, and serves the web viewer (`npm run view`). This repo adds the
+parts it doesn't have: a provider that replays recorded tool-calling conversations with per-model
+pricing (including cache reads and writes), the importers that turn agent runs into fixtures, and
+a library of agent-specific assertions.
+
+If you know promptfoo, the mapping is direct: a suite's `promptfooconfig.yaml` is a
+[config file](https://www.promptfoo.dev/docs/configuration/guide/), `cases.yaml` holds its
+[test cases](https://www.promptfoo.dev/docs/configuration/test-cases/) (each with a `fixture`
+variable), `src/provider.ts` is a [custom provider](https://www.promptfoo.dev/docs/providers/custom-api/),
+and the checks in `src/assertions.ts` are
+[JavaScript assertions](https://www.promptfoo.dev/docs/configuration/expected-outputs/javascript/)
+that sit alongside promptfoo's [built-in ones](https://www.promptfoo.dev/docs/configuration/expected-outputs/).
+Flags such as `--repeat` and `--max-concurrency` are listed in the
+[command-line reference](https://www.promptfoo.dev/docs/usage/command-line/). Tool definitions in a
+fixture use the OpenAI chat format; see promptfoo's
+[tools documentation](https://www.promptfoo.dev/docs/configuration/tools/).
 
 ## Try it (no model, no API key)
 
