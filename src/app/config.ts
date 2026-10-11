@@ -18,6 +18,8 @@ export interface AppConfig {
   viewerPort: number;
   /** Where the app finds things, relative to the working directory. */
   suitesDir: string;
+  /** Suites you create in the app live here, one folder each, beside (not inside) the suites that ship with the repo. */
+  userSuitesDir: string;
   recordingsDir: string;
   fixturesDir: string;
   runsDir: string;
@@ -38,6 +40,7 @@ export function loadAppConfig(path = process.env.PROMPT_TRIALS_CONFIG ?? 'trials
     port: Number(process.env.PORT ?? user.port ?? 5180),
     viewerPort: Number(process.env.VIEWER_PORT ?? user.viewerPort ?? 15500),
     suitesDir: user.suitesDir ?? 'suites',
+    userSuitesDir: process.env.USER_SUITES_DIR ?? user.userSuitesDir ?? 'user-suites',
     recordingsDir: user.recordingsDir ?? 'recordings',
     fixturesDir: user.fixturesDir ?? 'fixtures',
     runsDir: user.runsDir ?? 'output/runs',

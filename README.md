@@ -171,6 +171,10 @@ A small local web app for the parts of the workflow that are tedious on the comm
   recorded, then build a case from it: choose assertions from a list, try them against the recorded answer, and save.
   Cases land in the suite's `cases.private.yaml` (the previous version is kept as `.bak`) and fixtures under `fixtures/`.
   Existing private cases can be edited or deleted; the shipped examples are read-only.
+- **Suites:** make your own suite, or copy a shipped one (its cases come along). A suite has a description and checks
+  that apply to every case; the rest is its cases. Suites you make live in `user-suites/` (`USER_SUITES_DIR`), outside git,
+  so a redeploy keeps them. The suites that ship with the repo stay read-only in the app, which keeps the repo and
+  what the app shows from drifting apart. Deleting a suite moves it to `user-suites/.trash`.
 
 The app is dark by default, with a Light/Dark button and a palette picker in the left rail (five presets or any three colors of your own). Both choices are remembered per browser.
 
@@ -213,6 +217,7 @@ docker/                Dockerfile and an example compose file (your own compose.
 src/app/               control app: run launcher, results, case builder (public/ is its frontend)
 src/import-litellm.ts  LiteLLM spend logs → recordings                  src/record-proxy.ts   pass-through recorder
 suites/<name>/         promptfooconfig.yaml, cases.yaml, examples/ (synthetic fixtures)
+user-suites/<name>/    suites made in the app (untracked)
 scripts/audit.ts       refuses to publish private addresses, paths, keys, emails
 ```
 

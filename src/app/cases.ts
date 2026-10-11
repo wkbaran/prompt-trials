@@ -22,30 +22,55 @@ const HEADER = '# Cases built from your own recordings (gitignored; fixtures hol
 
 const safeName = (s: string) => /^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(s);
 
-export function suiteNames(cfg: AppConfig): string[] {
-  return readdirSync(cfg.suitesDir, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && existsSync(join(cfg.suitesDir, d.name, 'promptfooconfig.yaml')))
-    .map((d) => d.name)
-    .sort();
+type Roots = Pick<AppConfig, 'suitesDir' | 'userSuitesDir'>;
+
+const hasConfig = (dir: string, name: string) => existsSync(join(dir, name, 'promptfooconfig.yaml'));
+
+/** Where a suite's folder is: the repo's suites, or the ones made in the app. */
+export function locateSuite(cfg: Roots, suite: string): { dir: string; kind: 'shipped' | 'user' } | undefined {
+  if (!safeName(suite)) return undefined;
+  if (hasConfig(cfg.suitesDir, suite)) return { dir: join(cfg.suitesDir, suite), kind: 'shipped' };
+  if (hasConfig(cfg.userSuitesDir, suite)) return { dir: join(cfg.userSuitesDir, suite), kind: 'user' };
+  return undefined;
 }
 
-export function requireSuite(cfg: AppConfig, suite: string): string {
-  if (!safeName(suite) || !suiteNames(cfg).includes(suite)) throw new Error(`unknown suite "${suite}"`);
-  return join(cfg.suitesDir, suite);
+function namesIn(root: string): string[] {
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && !d.name.startsWith('.') && hasConfig(root, d.name))
+    .map((d) => d.name);
+}
+
+export function suiteNames(cfg: Roots): string[] {
+  return [...new Set([...namesIn(cfg.suitesDir), ...namesIn(cfg.userSuitesDir)])].sort();
+}
+
+export function requireSuite(cfg: Roots, suite: string): string {
+  const found = locateSuite(cfg, suite);
+  if (!found) throw new Error(`unknown suite "${suite}"`);
+  return found.dir;
 }
 
 /** The file holding a suite's private cases. */
-export function privateFile(cfg: Pick<AppConfig, 'suitesDir' | 'privateCasesDir'>, suite: string): string {
-  return cfg.privateCasesDir ? join(cfg.privateCasesDir, `${suite}.yaml`) : join(cfg.suitesDir, suite, PRIVATE_FILE);
+export function privateFile(cfg: Roots & Pick<AppConfig, 'privateCasesDir'>, suite: string): string {
+  if (cfg.privateCasesDir) return join(cfg.privateCasesDir, `${suite}.yaml`);
+  return join(locateSuite(cfg, suite)?.dir ?? join(cfg.suitesDir, suite), PRIVATE_FILE);
+}
+
+/** Every file of cases a suite runs: its own cases*.yaml, then the private file when that lives elsewhere. */
+export function caseFiles(cfg: AppConfig, suite: string): { path: string; external: boolean }[] {
+  const dir = requireSuite(cfg, suite);
+  const files = readdirSync(dir).filter((f) => /^cases.*\.ya?ml$/.test(f)).sort().map((f) => ({ path: join(dir, f), external: false }));
+  const priv = privateFile(cfg, suite);
+  if (cfg.privateCasesDir && existsSync(priv)) files.push({ path: priv, external: true });
+  return files;
 }
 
 export function listCases(cfg: AppConfig, suite: string): CaseInfo[] {
   const dir = requireSuite(cfg, suite);
   const out: CaseInfo[] = [];
   const priv = privateFile(cfg, suite);
-  const files = readdirSync(dir).filter((f) => /^cases.*\.ya?ml$/.test(f)).sort().map((f) => join(dir, f));
-  if (cfg.privateCasesDir && existsSync(priv)) files.push(priv);
-  for (const path of files) {
+  for (const { path } of caseFiles(cfg, suite)) {
     const file = cfg.privateCasesDir && path === priv ? `${suite}.yaml (private)` : path.slice(dir.length + 1);
     const list = parse(readFileSync(path, 'utf8')) as any[] | null;
     (list ?? []).forEach((c, index) => {
@@ -98,6 +123,13 @@ export function saveCase(cfg: AppConfig, suite: string, c: CaseInput, index?: nu
   if (index === undefined) seq.add(node);
   else if (index >= 0 && index < seq.items.length) seq.items[index] = node;
   else throw new Error('that case no longer exists');
+  writePrivate(path, doc);
+}
+
+/** Adds cases without the checks saveCase makes; used when a suite is copied. */
+export function appendCases(cfg: AppConfig, suite: string, cases: CaseInput[]): void {
+  const { path, doc, seq } = loadPrivate(cfg, suite);
+  for (const c of cases) seq.add(doc.createNode(entry(c)));
   writePrivate(path, doc);
 }
 

@@ -11,9 +11,9 @@ COPY package.json tsconfig.json ./
 COPY src src
 # The app writes a generated config next to each suite's own when it starts a run.
 COPY --chown=node:node suites suites
-RUN mkdir -p recordings fixtures output cases .promptfoo && chown node:node recordings fixtures output cases .promptfoo
+RUN mkdir -p recordings fixtures output cases user-suites .promptfoo && chown node:node recordings fixtures output cases user-suites .promptfoo
 USER node
-ENV HOST=0.0.0.0 PORT=5180 VIEWER_PORT=15500 PRIVATE_CASES_DIR=/app/cases
+ENV HOST=0.0.0.0 PORT=5180 VIEWER_PORT=15500 PRIVATE_CASES_DIR=/app/cases USER_SUITES_DIR=/app/user-suites
 EXPOSE 5180 15500
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||5180)+'/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "src/app/server.ts"]

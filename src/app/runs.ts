@@ -1,10 +1,10 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { loadRegistry } from '../registry.ts';
-import { privateFile, requireSuite } from './cases.ts';
+import { caseFiles, listCases, requireSuite } from './cases.ts';
 import type { AppConfig } from './config.ts';
 import { type ModelTotals, summarize } from './summarize.ts';
 
@@ -44,9 +44,9 @@ export const promptfooEnv = (): NodeJS.ProcessEnv => ({
 });
 
 /** The suite's config with its providers replaced by the chosen models. */
-export function runConfig(suiteConfigYaml: string, models: string[], extraTests: string[] = []): string {
+export function runConfig(suiteConfigYaml: string, models: string[], tests: string[]): string {
   const cfg = parse(suiteConfigYaml) as Record<string, unknown>;
-  if (extraTests.length) cfg.tests = [...(Array.isArray(cfg.tests) ? cfg.tests : cfg.tests ? [cfg.tests] : []), ...extraTests];
+  cfg.tests = tests;
   cfg.providers = models.map((m) => ({ id: PROVIDER, label: m, config: { model: m } }));
   return stringify(cfg, { lineWidth: 0 });
 }
@@ -116,6 +116,7 @@ export class RunManager {
     if (!req.models?.length) throw new Error('choose at least one model');
     const bad = req.models.filter((m) => !known.includes(m));
     if (bad.length) throw new Error(`unknown model: ${bad.join(', ')}`);
+    if (!listCases(this.cfg, req.suite).length) throw new Error('this suite has no cases yet; add one from a recording first');
     const repeat = Math.max(1, Math.min(50, Math.floor(req.repeat ?? 1)));
     const concurrency = Math.max(1, Math.min(16, Math.floor(req.concurrency ?? 1)));
 
@@ -127,10 +128,9 @@ export class RunManager {
 
     // The generated config sits beside the suite's own so its relative file:// paths still resolve.
     const cfgPath = join(suiteDir, `.run-${id}.yaml`);
-    // Private cases kept outside the suite directory are added to the suite's own tests.
-    const priv = privateFile(this.cfg, req.suite);
-    const extra = this.cfg.privateCasesDir && existsSync(priv) ? [`file://${resolve(priv)}`] : [];
-    writeFileSync(cfgPath, runConfig(readFileSync(join(suiteDir, 'promptfooconfig.yaml'), 'utf8'), req.models, extra));
+    // Every case file the suite has: those beside its config by name, private ones kept elsewhere by full path.
+    const tests = caseFiles(this.cfg, req.suite).map((f) => `file://${f.external ? resolve(f.path) : basename(f.path)}`);
+    writeFileSync(cfgPath, runConfig(readFileSync(join(suiteDir, 'promptfooconfig.yaml'), 'utf8'), req.models, tests));
     const results = join(this.dir(id), 'results.json');
     const args = ['eval', '-c', cfgPath, '--no-cache', '--no-progress-bar', '--repeat', String(repeat), '-j', String(concurrency), '-o', results];
     const child = spawn(join('node_modules', '.bin', 'promptfoo'), args, { env: promptfooEnv(), stdio: ['ignore', 'pipe', 'pipe'] });

@@ -1,14 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as A from '../src/assertions.ts';
 import { buildAssertion, CATALOG, parseAssertion } from '../src/app/catalog.ts';
-import { checkAssertions, deleteCase, listCases, saveCase } from '../src/app/cases.ts';
+import { caseFiles, checkAssertions, deleteCase, listCases, requireSuite, saveCase } from '../src/app/cases.ts';
 import type { AppConfig } from '../src/app/config.ts';
 import { guardWarnings, isLocalModel, windowWarnings } from '../src/app/guard.ts';
 import { runConfig } from '../src/app/runs.ts';
+import { createSuite, deleteSuite, getSuite, listSuites, updateSuite } from '../src/app/suites.ts';
 import { basicAuthOk, credentialsFromEnv } from '../src/app/auth.ts';
 import { summarize } from '../src/app/summarize.ts';
 
@@ -58,8 +59,8 @@ test('guardWarnings only concerns local models, and reads what Ollama has loaded
 });
 
 test('runConfig swaps providers and keeps the rest', () => {
-  const out = runConfig('description: d\nproviders:\n  - id: x\ntests: file://cases*.yaml\n', ['@reference', 'm1']);
-  assert.match(out, /tests: file:\/\/cases\*\.yaml/);
+  const out = runConfig('description: d\nproviders:\n  - id: x\ntests: file://cases*.yaml\n', ['@reference', 'm1'], ['file://cases.yaml']);
+  assert.match(out, /- file:\/\/cases\.yaml/);
   assert.match(out, /label: m1/);
   assert.doesNotMatch(out, /id: x/);
 });
@@ -105,11 +106,11 @@ test('cases: save, edit, delete, backup, and the recorded-answer check', () => {
   assert.throws(() => saveCase(cfg, 's1', { description: 'a', fixture: 'f', assertions: [] }), /at least one/);
 });
 
-test('runConfig appends private case files to the suite tests', () => {
-  const one = runConfig('tests: file://cases*.yaml\n', ['m'], ['file:///data/s.yaml']);
-  assert.match(one, /- file:\/\/cases\*\.yaml\n\s*- file:\/\/\/data\/s\.yaml/);
+test('runConfig lists the given case files, replacing the glob', () => {
+  const out = runConfig('tests: file://cases*.yaml\n', ['m'], ['file://cases.yaml', 'file:///data/s.yaml']);
+  assert.match(out, /- file:\/\/cases\.yaml\n\s*- file:\/\/\/data\/s\.yaml/);
+  assert.doesNotMatch(out, /cases\*/);
   assert.match(runConfig('description: x\n', ['m'], ['file:///data/s.yaml']), /tests:\n\s*- file:\/\/\/data\/s\.yaml/);
-  assert.doesNotMatch(runConfig('tests: file://cases*.yaml\n', ['m']), /- file/);
 });
 
 test('basic auth: env parsing and header check', () => {
@@ -136,4 +137,41 @@ test('private cases can live outside the suite directory', () => {
   const cases = listCases(cfg, 's1');
   assert.deepEqual(cases.map((c) => [c.description, c.editable]), [['shipped', false], ['mine', true]]);
   assert.match(readFileSync(join(root, 'data', 'cases', 's1.yaml'), 'utf8'), /mine/);
+});
+
+test('suites made in the app: create, copy, edit, delete, and the shipped ones stay read-only', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pt-suites-'));
+  mkdirSync(join(root, 'suites', 'shipped-one'), { recursive: true });
+  writeFileSync(join(root, 'suites', 'shipped-one', 'promptfooconfig.yaml'), 'description: Shipped\ndefaultTest:\n  assert:\n    - { type: javascript, value: "file://../../src/assertions.ts:validToolArguments" }\n    - { type: not-icontains, value: oops }\ntests: file://cases*.yaml\n');
+  writeFileSync(join(root, 'suites', 'shipped-one', 'cases.yaml'), '- description: a case\n  vars: { fixture: f.json }\n  assert:\n    - { type: icontains, value: hi }\n');
+  const cfg = { suitesDir: join(root, 'suites'), userSuitesDir: join(root, 'user-suites'), privateCasesDir: join(root, 'cases') } as AppConfig;
+
+  assert.deepEqual(listSuites(cfg).map((s) => [s.name, s.kind, s.cases]), [['shipped-one', 'shipped', 1]]);
+  const shipped = getSuite(cfg, 'shipped-one');
+  assert.deepEqual(shipped.defaultAssertions.map((a) => a.id), ['not-icontains']); // the always-on check is not listed
+
+  createSuite(cfg, 'my-copy', { description: 'My copy', defaultAssertions: shipped.defaultAssertions.map((a) => a.raw) }, 'shipped-one');
+  assert.deepEqual(listSuites(cfg).map((s) => [s.name, s.kind, s.cases]), [['my-copy', 'user', 1], ['shipped-one', 'shipped', 1]]);
+  assert.match(readFileSync(join(root, 'user-suites', 'my-copy', 'promptfooconfig.yaml'), 'utf8'), /validToolArguments[\s\S]*oops/);
+  assert.deepEqual(caseFiles(cfg, 'my-copy').map((f) => f.external), [true]);
+  assert.equal(listCases(cfg, 'my-copy')[0]!.editable, true);
+
+  updateSuite(cfg, 'my-copy', { description: 'Renamed', defaultAssertions: [] });
+  assert.equal(getSuite(cfg, 'my-copy').description, 'Renamed');
+  assert.deepEqual(getSuite(cfg, 'my-copy').defaultAssertions, []);
+
+  assert.throws(() => updateSuite(cfg, 'shipped-one', { description: 'x', defaultAssertions: [] }), /read-only/);
+  assert.throws(() => deleteSuite(cfg, 'shipped-one'), /read-only/);
+  assert.throws(() => createSuite(cfg, 'my-copy', { description: 'again', defaultAssertions: [] }), /already exists/);
+  assert.throws(() => createSuite(cfg, 'shipped-one', { description: 'again', defaultAssertions: [] }), /already exists/);
+  assert.throws(() => createSuite(cfg, 'Bad Name', { description: 'x', defaultAssertions: [] }), /lowercase/);
+  assert.throws(() => createSuite(cfg, '../escape', { description: 'x', defaultAssertions: [] }), /lowercase/);
+  assert.throws(() => createSuite(cfg, 'blank', { description: ' ', defaultAssertions: [] }), /description/);
+  assert.throws(() => requireSuite(cfg, '.trash'), /unknown suite/);
+
+  deleteSuite(cfg, 'my-copy');
+  assert.deepEqual(listSuites(cfg).map((s) => s.name), ['shipped-one']);
+  assert.equal(existsSync(join(root, 'cases', 'my-copy.yaml')), false);
+  assert.equal(readdirSync(join(root, 'user-suites', '.trash')).length, 1); // moved aside, not erased
+  createSuite(cfg, 'my-copy', { description: 'Again', defaultAssertions: [] }); // the name is free again
 });

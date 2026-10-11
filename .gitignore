@@ -14,3 +14,4 @@ trials.config.yaml
 suites/*/cases.private.yaml.bak
 docker/compose.yaml
 docker/.env
+user-suites/

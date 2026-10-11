@@ -10,12 +10,13 @@ import { pathToFileURL } from 'node:url';
 import { loadRegistry } from '../registry.ts';
 import { basicAuthOk, CHALLENGE, credentialsFromEnv } from './auth.ts';
 import { buildAssertion, CATALOG, type Values } from './catalog.ts';
-import { checkAssertions, deleteCase, listCases, requireSuite, saveCase, suiteNames } from './cases.ts';
+import { checkAssertions, deleteCase, listCases, requireSuite, saveCase } from './cases.ts';
 import { loadAppConfig } from './config.ts';
 import { guardWarnings, isLocalModel } from './guard.ts';
 import { viewerProxy } from './proxy.ts';
 import { conversations, cutFixture, listRecordingDirs, stepDetail } from './recordings.ts';
 import { promptfooEnv, RunManager } from './runs.ts';
+import { createSuite, deleteSuite, getSuite, listSuites, updateSuite } from './suites.ts';
 
 const cfg = loadAppConfig();
 const creds = credentialsFromEnv();
@@ -109,8 +110,24 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
 
   if (a === 'catalog' && method === 'GET') return send(res, 200, { assertions: CATALOG });
 
-  if (a === 'suites' && method === 'GET') {
-    return send(res, 200, { suites: suiteNames(cfg).map((name) => ({ name, cases: listCases(cfg, name).length })) });
+  if (a === 'suites') {
+    const defaults = (body: { defaultAssertions?: { id: string; values: Values }[] }) => (body.defaultAssertions ?? []).map((x) => buildAssertion(x.id, x.values ?? {}));
+    if (method === 'GET' && !b) return send(res, 200, { suites: listSuites(cfg) });
+    if (method === 'GET' && b) return send(res, 200, getSuite(cfg, b));
+    if (method === 'POST' && !b) {
+      const body = await readJson(req);
+      createSuite(cfg, body.name, { description: body.description ?? '', defaultAssertions: defaults(body) }, body.copyFrom);
+      return send(res, 200, { ok: true, name: body.name });
+    }
+    if (method === 'PUT' && b) {
+      const body = await readJson(req);
+      updateSuite(cfg, b, { description: body.description ?? '', defaultAssertions: defaults(body) });
+      return send(res, 200, { ok: true });
+    }
+    if (method === 'DELETE' && b) {
+      deleteSuite(cfg, b);
+      return send(res, 200, { ok: true });
+    }
   }
 
   if (a === 'cases') {

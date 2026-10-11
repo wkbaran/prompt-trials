@@ -63,6 +63,8 @@ const routes = [
   [/^#\/recordings$/, 'recordings', viewRecordings],
   [/^#\/recordings\/([\w.-]+)$/, 'recordings', viewRecordingDir],
   [/^#\/recordings\/([\w.-]+)\/([\w.-]+)$/, 'recordings', viewStep],
+  [/^#\/suites\/(new)(?:\/([\w-]+))?$/, 'cases', viewSuiteForm],
+  [/^#\/suites\/([\w-]+)\/(edit)$/, 'cases', viewSuiteForm],
   [/^#\/cases$/, 'cases', viewCases],
   [/^#\/cases\/([\w.-]+)$/, 'cases', viewCases],
 ];
@@ -77,7 +79,7 @@ async function route() {
     document.querySelectorAll('[data-nav]').forEach((a) => (a.dataset.nav === nav ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
     main.replaceChildren(h('p', { class: 'muted' }, 'Loading…'));
     try {
-      main.replaceChildren(await view(...m.slice(1).map(decodeURIComponent)));
+      main.replaceChildren(await view(...m.slice(1).map((x) => (x === undefined ? undefined : decodeURIComponent(x)))));
     } catch (e) {
       main.replaceChildren(showError(e));
     }
@@ -283,19 +285,14 @@ async function catalog() {
   return catalogCache;
 }
 
-function caseBuilder({ suites, suite, tools = [], recording, fixture, description = '', assertions = [], index }) {
-  const root = h('form', { class: 'panel stack', id: 'case-form', onsubmit: (e) => e.preventDefault() });
-  const state = { items: assertions.map((a) => ({ id: a.id, values: { ...a.values } })) };
-  const suiteSel = h('select', {}, suites.map((s) => h('option', { value: s, selected: s === suite }, s)));
-  if (suite) suiteSel.disabled = true;
-  const desc = h('input', { type: 'text', value: description, placeholder: 'What this case should show, in a sentence' });
-  const fname = h('input', { type: 'text', value: '', placeholder: 'after-first-batch' });
-  const addSel = h('select', {});
+/** A list of checks with its "add" menu. `items` is edited in place; `payload()` is what the API takes. */
+function assertionList(initial) {
+  const items = initial.map((a) => ({ id: a.id, values: { ...a.values } }));
   const results = new Map();
-  const msg = h('div');
+  const addSel = h('select', { 'aria-label': 'Add a check' });
   const listBox = h('div');
 
-  function fieldInput(spec, f, item) {
+  function fieldInput(f, item) {
     const v = item.values[f.key];
     if (f.kind === 'bool') return h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: Boolean(v), onchange: (e) => (item.values[f.key] = e.target.checked) }), f.label);
     const label = h('label', {}, f.label, f.required ? '' : ' (optional)');
@@ -314,29 +311,55 @@ function caseBuilder({ suites, suite, tools = [], recording, fixture, descriptio
     return h('div', {}, label, input, f.help && h('div', { class: 'muted small' }, f.help));
   }
 
-  async function paintList() {
+  async function paint() {
     const cat = await catalog();
-    listBox.replaceChildren(...state.items.map((item, i) => {
+    listBox.replaceChildren(...items.map((item, i) => {
       const spec = cat.find((s) => s.id === item.id);
       const r = results.get(item);
       return h('div', { class: 'assert' },
-        h('header', {}, h('strong', {}, spec.label), h('button', { type: 'button', class: 'danger', onclick: () => { state.items.splice(i, 1); paintList(); } }, 'Remove')),
+        h('header', {}, h('strong', {}, spec.label), h('button', { type: 'button', class: 'danger', onclick: () => { items.splice(i, 1); paint(); } }, 'Remove')),
         h('div', { class: 'muted small' }, spec.help),
-        spec.fields.map((f) => fieldInput(spec, f, item)),
+        spec.fields.map((f) => fieldInput(f, item)),
         r && h('div', { class: `result ${r.pass ? 'pass' : 'fail'}` }, `${r.pass ? 'Passes' : 'Fails'} on the recorded answer: ${r.reason}`));
     }));
   }
 
-  async function body(extra = {}) {
-    return { suite: suite ?? suiteSel.value, description: desc.value, recording, fixture, fixtureName: fname.value, index,
-      assertions: state.items.map((a) => ({ id: a.id, values: a.values })), ...extra };
-  }
+  (async () => {
+    const cat = await catalog();
+    addSel.replaceChildren(h('option', { value: '' }, 'Add a check…'), ...cat.map((s) => h('option', { value: s.id }, s.label)));
+    addSel.addEventListener('change', () => {
+      if (!addSel.value) return;
+      const item = { id: addSel.value, values: {} };
+      for (const f of cat.find((s) => s.id === addSel.value).fields) if (f.kind === 'bool') item.values[f.key] = f.default ?? false;
+      items.push(item);
+      addSel.value = '';
+      paint();
+    });
+    await paint();
+  })();
+
+  return {
+    node: h('div', {}, listBox, addSel),
+    payload: () => items.map((a) => ({ id: a.id, values: a.values })),
+    showResults(rs) { items.forEach((it, i) => results.set(it, rs[i])); return paint(); },
+  };
+}
+
+function caseBuilder({ suites, suite, tools = [], recording, fixture, description = '', assertions = [], index }) {
+  const root = h('form', { class: 'panel stack', id: 'case-form', onsubmit: (e) => e.preventDefault() });
+  const list = assertionList(assertions);
+  const suiteSel = h('select', {}, suites.map((s) => h('option', { value: s, selected: s === suite }, s)));
+  if (suite) suiteSel.disabled = true;
+  const desc = h('input', { type: 'text', value: description, placeholder: 'What this case should show, in a sentence' });
+  const fname = h('input', { type: 'text', value: '', placeholder: 'after-first-batch' });
+  const msg = h('div');
+
+  const body = (extra = {}) => ({ suite: suite ?? suiteSel.value, description: desc.value, recording, fixture, fixtureName: fname.value, index, assertions: list.payload(), ...extra });
   async function check() {
     msg.replaceChildren();
     try {
-      const { results: rs } = await api('cases', { body: await body({ check: true }) });
-      state.items.forEach((it, i) => results.set(it, rs[i]));
-      await paintList();
+      const { results: rs } = await api('cases', { body: body({ check: true }) });
+      await list.showResults(rs);
     } catch (e) {
       msg.replaceChildren(showError(e));
     }
@@ -344,27 +367,12 @@ function caseBuilder({ suites, suite, tools = [], recording, fixture, descriptio
   async function save() {
     msg.replaceChildren();
     try {
-      const s = suite ?? suiteSel.value;
-      await api('cases', { body: await body() });
-      location.hash = `#/cases/${s}`;
+      await api('cases', { body: body() });
+      location.hash = `#/cases/${suite ?? suiteSel.value}`;
     } catch (e) {
       msg.replaceChildren(showError(e));
     }
   }
-
-  (async () => {
-    const cat = await catalog();
-    addSel.replaceChildren(h('option', { value: '' }, 'Add an assertion…'), ...cat.map((s) => h('option', { value: s.id }, s.label)));
-    addSel.addEventListener('change', () => {
-      if (!addSel.value) return;
-      state.items.push({ id: addSel.value, values: {} });
-      const spec = cat.find((s) => s.id === addSel.value);
-      for (const f of spec.fields) if (f.kind === 'bool') state.items.at(-1).values[f.key] = f.default ?? false;
-      addSel.value = '';
-      paintList();
-    });
-    await paintList();
-  })();
 
   root.append(
     h('datalist', { id: 'tools-list' }, tools.map((t) => h('option', { value: t }))),
@@ -374,37 +382,85 @@ function caseBuilder({ suites, suite, tools = [], recording, fixture, descriptio
       recording && h('div', {}, h('label', {}, 'Fixture file name'), fname)),
     h('label', {}, 'Description'), desc,
     h('h3', {}, 'What should the next step satisfy?'),
-    listBox, addSel,
+    list.node,
     msg,
     h('div', { class: 'row' },
       recording || fixture ? h('div', { class: 'fit' }, h('button', { type: 'button', onclick: check }, 'Try against the recorded answer')) : null,
       h('div', { class: 'fit' }, h('button', { type: 'button', class: 'primary', onclick: save }, 'Save case'))),
-    h('p', { class: 'muted small' }, 'Cases are saved to the suite’s cases.private.yaml and the fixture to fixtures/. Both stay out of git.'));
+    h('p', { class: 'muted small' }, 'Cases are saved to the suite’s private cases file and the fixture to fixtures/. Both stay out of git.'));
   return root;
+}
+
+// ---------------------------------------------------------------- suite settings
+async function viewSuiteForm(a, b) {
+  // #/suites/new, #/suites/new/<copy from>, #/suites/<name>/edit
+  const editing = b === 'edit';
+  const source = editing ? a : a === 'new' ? b : undefined;
+  const detail = source ? await api(`suites/${encodeURIComponent(source)}`) : undefined;
+  if (editing && detail.kind !== 'user') throw new Error('Suites that ship with the repo are read-only. Copy it to change it.');
+  const name = h('input', { type: 'text', value: '', placeholder: 'medium-experiments', disabled: editing, 'aria-label': 'Suite name' });
+  const desc = h('input', { type: 'text', value: detail?.description ?? '', placeholder: 'What this suite checks' });
+  const list = assertionList((detail?.defaultAssertions ?? []).filter((x) => x.id).map((x) => ({ id: x.id, values: x.values })));
+  const hidden = (detail?.defaultAssertions ?? []).filter((x) => !x.id).length;
+  const msg = h('div');
+  async function save() {
+    msg.replaceChildren();
+    try {
+      const body = { description: desc.value, defaultAssertions: list.payload() };
+      if (editing) await api(`suites/${encodeURIComponent(a)}`, { method: 'PUT', body });
+      else await api('suites', { body: { ...body, name: name.value.trim(), copyFrom: source } });
+      location.hash = `#/cases/${editing ? a : name.value.trim()}`;
+    } catch (e) {
+      msg.replaceChildren(showError(e));
+    }
+  }
+  return h('div', { class: 'stack' },
+    h('div', {}, h('p', { class: 'crumb' }, h('a', { href: editing ? `#/cases/${a}` : '#/cases' }, 'Cases')),
+      h('h1', {}, editing ? `Settings for ${a}` : source ? `Copy ${source}` : 'New suite'),
+      h('p', { class: 'lede' }, editing ? 'The checks below run on every case in this suite, in addition to the checks on each case.' : source ? 'Creates your own editable suite with the same checks and a copy of every case. Fixtures are shared, not copied.' : 'A suite groups cases that test one kind of agent step. Add its cases from a recording afterwards.')),
+    h('form', { class: 'panel stack', onsubmit: (e) => e.preventDefault() },
+      !editing && h('div', {}, h('label', {}, 'Name'), name, h('div', { class: 'muted small' }, 'Lowercase letters, digits and dashes.')),
+      h('div', {}, h('label', {}, 'Description'), desc),
+      h('h3', {}, 'Checks for every case'),
+      hidden ? h('div', { class: 'notice' }, `${hidden} check(s) use settings the editor can't show. They are dropped when you save.`) : null,
+      list.node, msg,
+      h('div', { class: 'row' }, h('div', { class: 'fit' }, h('button', { type: 'button', class: 'primary', onclick: save }, editing ? 'Save settings' : 'Create suite')))));
 }
 
 // ---------------------------------------------------------------- cases
 async function viewCases(suiteName) {
   const { suites } = await api('suites');
   if (!suites.length) return h('div', {}, h('h1', {}, 'Cases'), h('p', {}, 'No suites found.'));
-  const current = suiteName ?? suites[0].name;
+  const meta = suites.find((s) => s.name === suiteName) ?? suites[0];
+  const current = meta.name;
   const [{ cases }, cat] = await Promise.all([api(`cases/${encodeURIComponent(current)}`), catalog()]);
   const describe = (a) => {
     const spec = a.id && cat.find((s) => s.id === a.id);
     const bits = spec ? Object.entries(a.values ?? {}).filter(([, v]) => v !== undefined && v !== '' && !(Array.isArray(v) && !v.length)).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`) : [JSON.stringify(a.raw)];
     return `${spec ? spec.label : a.raw.type}${bits.length ? ` (${bits.join('; ')})` : ''}`;
   };
+  const mine = meta.kind === 'user';
   return h('div', { class: 'stack' },
     h('div', {}, h('h1', {}, 'Cases'), h('p', { class: 'lede' }, 'Each case is a recorded step plus the checks that decide whether a model’s next step is right.')),
-    h('div', { class: 'row' }, h('div', { class: 'fit' }, h('label', { for: 'suite-pick', style: 'margin-top:0' }, 'Suite'),
-      h('select', { id: 'suite-pick', onchange: (e) => (location.hash = `#/cases/${e.target.value}`) }, suites.map((s) => h('option', { value: s.name, selected: s.name === current }, s.name))))),
-    h('div', { class: 'scroll' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Case'), h('th', {}, 'Checks'), h('th', {}, ''))),
+    h('div', { class: 'row' },
+      h('div', {}, h('label', { for: 'suite-pick', style: 'margin-top:0' }, 'Suite'),
+        h('select', { id: 'suite-pick', onchange: (e) => (location.hash = `#/cases/${e.target.value}`) },
+          suites.map((s) => h('option', { value: s.name, selected: s.name === current }, s.kind === 'user' ? `${s.name} (yours)` : s.name)))),
+      h('div', { class: 'fit row' },
+        h('button', { type: 'button', class: 'fit', onclick: () => (location.hash = '#/suites/new') }, 'New suite'),
+        mine
+          ? [h('button', { type: 'button', class: 'fit', onclick: () => (location.hash = `#/suites/${current}/edit`) }, 'Suite settings'),
+             h('button', { type: 'button', class: 'fit danger', onclick: async () => { if (confirm(`Delete the suite “${current}”? Its cases move to a trash folder; fixtures stay.`)) { await api(`suites/${encodeURIComponent(current)}`, { method: 'DELETE' }); location.hash = '#/cases'; } } }, 'Delete suite')]
+          : h('button', { type: 'button', class: 'fit', onclick: () => (location.hash = `#/suites/new/${current}`) }, 'Copy as new suite'))),
+    meta.description && h('p', { class: 'muted' }, meta.description, mine ? '' : ' This suite ships with the repo, so it is read-only here.'),
+    cases.length ? h('div', { class: 'scroll' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Case'), h('th', {}, 'Checks'), h('th', {}, ''))),
       h('tbody', {}, cases.map((c) => h('tr', {},
         h('td', {}, c.description, h('div', { class: 'muted small mono' }, `${c.file} → ${c.fixture}`)),
         h('td', {}, c.assertions.map((a) => h('div', { class: 'small' }, describe(a)))),
         h('td', {}, c.editable ? h('div', { class: 'row' },
           h('button', { class: 'fit', onclick: () => editCase(c, suites.map((s) => s.name), current) }, 'Edit'),
-          h('button', { class: 'fit danger', onclick: async () => { if (confirm(`Delete “${c.description}”? The fixture file stays.`)) { await api(`cases/${current}/${c.index}`, { method: 'DELETE' }); route(); } } }, 'Delete')) : h('span', { class: 'muted small' }, 'example'))))))),
+          h('button', { class: 'fit danger', onclick: async () => { if (confirm(`Delete “${c.description}”? The fixture file stays.`)) { await api(`cases/${current}/${c.index}`, { method: 'DELETE' }); route(); } } }, 'Delete')) : h('span', { class: 'muted small' }, 'example')))))))
+      : h('p', { class: 'muted' }, 'This suite has no cases yet.'),
     h('p', { class: 'muted small' }, 'Create a case from a ', h('a', { href: '#/recordings' }, 'recording'), '. Cases in cases.yaml are shipped examples and are read-only here.'));
 }
 
