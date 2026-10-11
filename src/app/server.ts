@@ -14,7 +14,7 @@ import { checkAssertions, deleteCase, listCases, requireSuite, saveCase } from '
 import { loadAppConfig } from './config.ts';
 import { guardWarnings, isLocalModel } from './guard.ts';
 import { viewerProxy } from './proxy.ts';
-import { conversations, cutFixture, listRecordingDirs, stepDetail } from './recordings.ts';
+import { conversations, cutFixture, deleteRecordingDir, listRecordingDirs, stepDetail } from './recordings.ts';
 import { promptfooEnv, RunManager } from './runs.ts';
 import { importWindow, recentRuns } from './litellm-runs.ts';
 import { makeClient } from '../litellm.ts';
@@ -155,6 +155,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
     if (method === 'GET' && !b) return send(res, 200, { dirs: listRecordingDirs(cfg) });
     if (method === 'GET' && b && !c) return send(res, 200, { conversations: conversations(cfg, b) });
     if (method === 'GET' && b && c) return send(res, 200, stepDetail(cfg, b, c));
+    if (method === 'DELETE' && b && !c) return send(res, 200, { deleted: deleteRecordingDir(cfg, b) });
   }
 
   if (a === 'runs') {

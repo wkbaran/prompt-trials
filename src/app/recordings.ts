@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { unwrap } from '../assertions.ts';
 import { answerSummary, groupConversations, readRecording, safeParse, text, toFixture, type Recording } from '../fixture.ts';
@@ -80,4 +80,12 @@ export function cutFixture(cfg: AppConfig, dir: string, file: string, suite: str
   const path = fixturePath(cfg, suite, name);
   writeFileSync(path, JSON.stringify(toFixture(rec, file), null, 2));
   return path;
+}
+
+/** Removes a recordings folder. Fixtures and cases made from it are separate copies and stay. */
+export function deleteRecordingDir(cfg: AppConfig, dir: string): number {
+  const path = dirOf(cfg, dir);
+  const files = readdirSync(path).filter((f) => f.endsWith('.json')).length;
+  rmSync(path, { recursive: true });
+  return files;
 }

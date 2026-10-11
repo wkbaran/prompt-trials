@@ -330,21 +330,35 @@ function litellmPanel() {
   return panel;
 }
 
+/** Deletes a recordings folder after asking. Cases and fixtures made from it are separate copies and stay. */
+async function removeRecordings(name, count, after) {
+  const ok = confirm(`Delete the folder “${name}” and its ${count} recorded requests?\n\nCases and fixtures you made from it are not affected. You can import the run again from LiteLLM while it is still in the proxy’s logs.`);
+  if (!ok) return;
+  try {
+    await api(`recordings/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    after();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
 async function viewRecordings() {
   const { dirs } = await api('recordings');
   return h('div', { class: 'stack' },
     h('div', {}, h('h1', {}, 'Recordings'), h('p', { class: 'lede' }, 'Every recorded request is a snapshot of an agent mid-task. Pick one to turn it into a test case.')),
     litellmPanel(),
     dirs.length
-      ? h('div', { class: 'scroll' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Folder'), h('th', { class: 'num' }, 'Requests'))),
+      ? h('div', { class: 'scroll' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Folder'), h('th', { class: 'num' }, 'Requests'), h('th', {}, ''))),
           h('tbody', {}, dirs.map((d) => h('tr', { class: 'link', tabindex: 0, onclick: () => (location.hash = `#/recordings/${d.name}`), onkeydown: (e) => e.key === 'Enter' && (location.hash = `#/recordings/${d.name}`) },
-            h('td', {}, d.name), h('td', { class: 'num' }, d.files))))))
+            h('td', {}, d.name), h('td', { class: 'num' }, d.files),
+            h('td', { class: 'nowrap' }, h('button', { type: 'button', class: 'danger', onclick: (e) => { e.stopPropagation(); removeRecordings(d.name, d.files, () => route()); } }, 'Delete')))))))
       : h('p', { class: 'muted' }, 'No recordings yet. Import a run above.'));
 }
 
 async function viewRecordingDir(dir) {
   const { conversations } = await api(`recordings/${encodeURIComponent(dir)}`);
   return h('div', {}, h('p', { class: 'crumb' }, h('a', { href: '#/recordings' }, 'All recordings')), h('h1', {}, dir),
+    h('p', {}, h('button', { type: 'button', class: 'danger', onclick: () => removeRecordings(dir, conversations.reduce((n, c) => n + c.steps.length, 0), () => (location.hash = '#/recordings')) }, 'Delete this folder')),
     h('p', { class: 'lede' }, `${conversations.length} conversations. Each row is one request, the model’s next step in that conversation.`),
     conversations.map((c) => h('section', {},
       h('h3', {}, c.key),

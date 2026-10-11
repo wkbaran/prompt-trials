@@ -11,6 +11,7 @@ import { guardWarnings, isLocalModel, windowWarnings } from '../src/app/guard.ts
 import { runConfig } from '../src/app/runs.ts';
 import { clusterRows, describeRun, listSpend, makeClient, timestampKey, toRecording } from '../src/litellm.ts';
 import { importedPrefixes, importWindow, recentRuns } from '../src/app/litellm-runs.ts';
+import { deleteRecordingDir, listRecordingDirs } from '../src/app/recordings.ts';
 import { createSuite, deleteSuite, getSuite, listSuites, updateSuite } from '../src/app/suites.ts';
 import { basicAuthOk, credentialsFromEnv } from '../src/app/auth.ts';
 import { summarize } from '../src/app/summarize.ts';
@@ -246,4 +247,20 @@ test('recent runs are labelled and marked imported; importing writes recordings'
   assert.deepEqual(runs.map((r) => [r.imported, r.importedAs]), [[false, undefined], [true, 'first-run']]);
   await assert.rejects(importWindow(cfg, client, '2026-10-11T12:00:00Z', '2026-10-11T12:01:00Z', '../escape'), /folder names/);
   await assert.rejects(importWindow(cfg, client, '2026-10-11T00:00:00Z', '2026-10-12T00:00:00Z', 'wide'), /not a single run/);
+});
+
+test('deleting a recordings folder removes only that folder, and the run can be imported again', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'pt-del-'));
+  const cfg = { recordingsDir: join(root, 'recordings') } as AppConfig;
+  const rows = [row('a', '2026-10-11T12:00:00.000+00:00'), row('b', '2026-10-11T12:01:00.000+00:00')];
+  const { client } = fakeProxy(rows);
+  await importWindow(cfg, client, '2026-10-11T12:00:00Z', '2026-10-11T12:01:00Z', 'keep-me');
+  await importWindow(cfg, client, '2026-10-11T12:00:00Z', '2026-10-11T12:01:00Z', 'drop-me');
+  assert.deepEqual(listRecordingDirs(cfg).map((d) => [d.name, d.files]).sort(), [['drop-me', 2], ['keep-me', 2]]);
+  assert.equal(deleteRecordingDir(cfg, 'drop-me'), 2);
+  assert.deepEqual(listRecordingDirs(cfg).map((d) => d.name), ['keep-me']);
+  assert.throws(() => deleteRecordingDir(cfg, 'drop-me'), /no recordings/);
+  assert.throws(() => deleteRecordingDir(cfg, '../recordings'), /bad recording directory/);
+  assert.throws(() => deleteRecordingDir(cfg, '.'), /bad recording directory/);
+  assert.equal(readdirSync(join(root, 'recordings', 'keep-me')).length, 2);
 });
