@@ -172,6 +172,8 @@ A small local web app for the parts of the workflow that are tedious on the comm
   Cases land in the suite's `cases.private.yaml` (the previous version is kept as `.bak`) and fixtures under `fixtures/`.
   Existing private cases can be edited or deleted; the shipped examples are read-only.
 
+The app is dark by default, with a Light/Dark button and a palette picker in the left rail (five presets or any three colors of your own). Both choices are remembered per browser.
+
 It binds to `127.0.0.1` by default (`HOST`, `PORT` and `VIEWER_PORT` change that).
 
 ### Running it as a container

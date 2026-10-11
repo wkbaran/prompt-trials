@@ -7,9 +7,9 @@
  * wants attention: the current page, the main action, links.
  */
 :root {
-  --p-ground: #0e1a21;
-  --p-ink: #e6edf1;
-  --p-signal: #45bcc8;
+  --p-ground: #101c2b;
+  --p-ink: #e6edf5;
+  --p-signal: #5b9dff;
   --ground: var(--p-ground);
   --ink: var(--p-ink);
   --signal: var(--p-signal);
@@ -96,7 +96,25 @@ label { display: block; font-weight: 500; margin: .8rem 0 .25rem; }
 .row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: end; }
 .row > * { flex: 1 1 10rem; }
 .row > .fit { flex: 0 0 auto; }
-.theme-btn { align-self: flex-start; font-size: .85rem; padding: .3rem .7rem; }
+.theme-btn { font-size: .85rem; padding: .3rem .7rem; }
+.rail-tools { display: flex; align-items: center; gap: .6rem; position: relative; }
+
+/* ---- palette picker (palette.js) */
+.pal { position: relative; }
+.pal-toggle { display: flex; padding: 4px; border-radius: 999px; }
+.pal-toggle span, .pal-preset span { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 0 1px var(--line-strong); }
+.pal-toggle span + span, .pal-preset span + span { margin-left: -4px; }
+.pal-panel { position: absolute; left: 0; bottom: calc(100% + 10px); width: 15.5rem; padding: .95rem; display: grid; gap: .6rem; background: var(--raised); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--shadow); font-size: .875rem; z-index: 30; }
+.pal-panel[hidden] { display: none; }
+.pal-heading { font-weight: 700; }
+.pal-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.pal-preset { display: flex; justify-content: center; padding: 6px 4px; }
+.pal-preset[aria-pressed="true"] { border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal); }
+.pal-field { display: flex; align-items: center; gap: .6rem; }
+.pal-field label { margin: 0; font-weight: 400; }
+.pal-field input { width: 2.2rem; height: 1.6rem; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius); background: none; cursor: pointer; }
+.pal-code { font-size: .75rem; color: var(--muted); user-select: all; }
+.pal-reset { font-size: .8rem; }
 
 /* ---- surfaces: separated by lines, not shadows */
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.1rem 1.35rem; }
@@ -167,6 +185,7 @@ pre { background: var(--ground); border: 1px solid var(--line); border-radius: v
   .rail a { padding: .45rem .9rem; border-left: 0; border-bottom: 3px solid transparent; }
   .rail a[aria-current="page"] { border-bottom-color: var(--signal); }
   .rail-foot { margin: 0 0 0 auto; padding: 0; border: 0; flex-direction: row; align-items: center; }
+  .pal-panel { bottom: auto; top: calc(100% + 10px); left: auto; right: 0; }
   main { padding: 1.25rem 1rem 3rem; }
 }
 @media (prefers-reduced-motion: no-preference) {

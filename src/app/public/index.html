@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="dark" data-palette="#101c2b,#e6edf5,#5b9dff">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,6 +9,7 @@
 <script>
   try { if (localStorage.getItem("prompt-trials.theme") === "light") document.documentElement.setAttribute("data-theme", "light"); } catch (e) {}
 </script>
+<script src="/palette.js"></script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%277%27 height=%277%27 rx=%271%27 fill=%27%232f7d4f%27/%3E%3Crect x=%279%27 width=%277%27 height=%277%27 rx=%271%27 fill=%27%23b3382c%27/%3E%3Crect y=%279%27 width=%277%27 height=%277%27 rx=%271%27 fill=%27%232f7d4f%27/%3E%3Crect x=%279%27 y=%279%27 width=%277%27 height=%277%27 rx=%271%27 fill=%27%232f7d4f%27/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/style.css">
 </head>
@@ -21,7 +22,9 @@
   <a href="#/cases" data-nav="cases">Cases</a>
   <div class="rail-foot">
     <a id="viewer-link" href="#" target="_blank" rel="noopener" hidden>promptfoo viewer</a>
-    <button id="theme-btn" class="theme-btn" type="button">☀️ Light</button>
+    <div class="rail-tools" id="rail-tools">
+      <button id="theme-btn" class="theme-btn" type="button">☀️ Light</button>
+    </div>
   </div>
 </nav>
 <main id="main" tabindex="-1"></main>
