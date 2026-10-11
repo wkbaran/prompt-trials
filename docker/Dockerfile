@@ -1,4 +1,4 @@
-# Control app + promptfoo viewer in one image. See compose.example.yaml for the volumes it expects.
+# Control app + promptfoo viewer in one image. See docker/compose.example.yaml for the volumes it expects.
 FROM node:26 AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./

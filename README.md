@@ -176,7 +176,7 @@ It binds to `127.0.0.1` by default (`HOST`, `PORT` and `VIEWER_PORT` change that
 
 ### Running it as a container
 
-`Dockerfile` and `compose.example.yaml` run the app and promptfoo's viewer together. Set `TRIALS_AUTH_USER` and
+`docker/Dockerfile` and `docker/compose.example.yaml` run the app and promptfoo's viewer together. Set `TRIALS_AUTH_USER` and
 `TRIALS_AUTH_PASSWORD` and both ask for that login (HTTP basic auth, over plain HTTP, so keep it on a network you trust).
 The viewer itself only listens on loopback inside the container; the app proxies it behind the same login. Without those
 variables there is no login, and the app warns when it listens on anything but localhost.
@@ -207,6 +207,7 @@ assertion library (`not-icontains`, `llm-rubric`, …) works too.
 src/provider.ts        promptfoo provider: replays a fixture against a model, records tokens/latency/cost
 src/registry.ts        models.yaml loader (${ENV} interpolation)       src/cost.ts   price math
 src/assertions.ts      reusable checks                                  src/cut.ts    recordings → fixtures
+docker/                Dockerfile and an example compose file (your own compose.yaml and .env stay untracked)
 src/app/               control app: run launcher, results, case builder (public/ is its frontend)
 src/import-litellm.ts  LiteLLM spend logs → recordings                  src/record-proxy.ts   pass-through recorder
 suites/<name>/         promptfooconfig.yaml, cases.yaml, examples/ (synthetic fixtures)

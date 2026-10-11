@@ -1,13 +1,17 @@
-# Example deployment. Copy next to a .env that sets the variables below, then:
-#   docker compose up -d --build
+# Example deployment. Copy to compose.yaml beside a .env that sets the variables below, then, from the project root:
+#   docker compose -f docker/compose.yaml --project-directory docker up -d --build
 #
 # Needs beside it (paths are relative to the data directory, TRIALS_DATA):
 #   models.yaml           your models (see models.example.yaml); mounted read-only
 #   trials.config.yaml    optional busy windows and the Ollama URL
 # and the folders recordings/, fixtures/, cases/, output/ and promptfoo/ (created on first start).
+name: prompt-trials
+
 services:
   prompt-trials:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: prompt-trials
     restart: unless-stopped
     environment:

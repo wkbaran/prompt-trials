@@ -13,3 +13,5 @@ suites/*/.run-*.yaml
 test
 scripts
 README.md
+docker/.env
+docker/compose.yaml

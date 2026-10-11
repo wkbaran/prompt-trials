@@ -12,3 +12,5 @@ suites/*/cases.private.yaml
 .run-*.yaml
 trials.config.yaml
 suites/*/cases.private.yaml.bak
+docker/compose.yaml
+docker/.env
