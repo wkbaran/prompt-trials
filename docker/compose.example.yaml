@@ -19,6 +19,7 @@ services:
       TRIALS_AUTH_PASSWORD: ${TRIALS_AUTH_PASSWORD:?set TRIALS_AUTH_PASSWORD in .env}
       LITELLM_API_KEY: ${LITELLM_API_KEY:-}
       OLLAMA_URL: ${OLLAMA_URL:-}
+      # SHIPPED_SUITES: hide   # uncomment to show only suites made in the app, not the repo's examples
       TZ: ${TZ:-UTC}
     ports:
       - "5180:5180"     # the app

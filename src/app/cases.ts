@@ -22,14 +22,15 @@ const HEADER = '# Cases built from your own recordings (gitignored; fixtures hol
 
 const safeName = (s: string) => /^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(s);
 
-type Roots = Pick<AppConfig, 'suitesDir' | 'userSuitesDir'>;
+type Roots = Pick<AppConfig, 'suitesDir' | 'userSuitesDir'> & { showShippedSuites?: boolean };
+const shippedVisible = (cfg: Roots) => cfg.showShippedSuites !== false;
 
 const hasConfig = (dir: string, name: string) => existsSync(join(dir, name, 'promptfooconfig.yaml'));
 
 /** Where a suite's folder is: the repo's suites, or the ones made in the app. */
 export function locateSuite(cfg: Roots, suite: string): { dir: string; kind: 'shipped' | 'user' } | undefined {
   if (!safeName(suite)) return undefined;
-  if (hasConfig(cfg.suitesDir, suite)) return { dir: join(cfg.suitesDir, suite), kind: 'shipped' };
+  if (shippedVisible(cfg) && hasConfig(cfg.suitesDir, suite)) return { dir: join(cfg.suitesDir, suite), kind: 'shipped' };
   if (hasConfig(cfg.userSuitesDir, suite)) return { dir: join(cfg.userSuitesDir, suite), kind: 'user' };
   return undefined;
 }
@@ -42,7 +43,7 @@ function namesIn(root: string): string[] {
 }
 
 export function suiteNames(cfg: Roots): string[] {
-  return [...new Set([...namesIn(cfg.suitesDir), ...namesIn(cfg.userSuitesDir)])].sort();
+  return [...new Set([...(shippedVisible(cfg) ? namesIn(cfg.suitesDir) : []), ...namesIn(cfg.userSuitesDir)])].sort();
 }
 
 export function requireSuite(cfg: Roots, suite: string): string {

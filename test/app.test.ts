@@ -175,3 +175,18 @@ test('suites made in the app: create, copy, edit, delete, and the shipped ones s
   assert.equal(readdirSync(join(root, 'user-suites', '.trash')).length, 1); // moved aside, not erased
   createSuite(cfg, 'my-copy', { description: 'Again', defaultAssertions: [] }); // the name is free again
 });
+
+test('hiding the shipped suites leaves only your own, and frees their names', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pt-hide-'));
+  mkdirSync(join(root, 'suites', 'medium-digest'), { recursive: true });
+  writeFileSync(join(root, 'suites', 'medium-digest', 'promptfooconfig.yaml'), 'description: Shipped\ntests: file://cases*.yaml\n');
+  writeFileSync(join(root, 'suites', 'medium-digest', 'cases.yaml'), '- description: synthetic example\n  vars: { fixture: f.json }\n  assert: []\n');
+  mkdirSync(join(root, 'cases'));
+  writeFileSync(join(root, 'cases', 'medium-digest.yaml'), '- description: my real case\n  vars: { fixture: fixtures/medium-digest/x.json }\n  assert:\n    - { type: icontains, value: hi }\n');
+  const cfg = { suitesDir: join(root, 'suites'), userSuitesDir: join(root, 'user-suites'), privateCasesDir: join(root, 'cases'), showShippedSuites: false } as AppConfig;
+  assert.deepEqual(listSuites(cfg), []);
+  createSuite(cfg, 'medium-digest', { description: 'Mine', defaultAssertions: [] }); // the same name, now free
+  const [suite] = listSuites(cfg);
+  assert.deepEqual([suite!.name, suite!.kind, suite!.cases], ['medium-digest', 'user', 1]);
+  assert.deepEqual(listCases(cfg, 'medium-digest').map((c) => [c.description, c.editable]), [['my real case', true]]); // no synthetic example
+});

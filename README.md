@@ -174,7 +174,7 @@ A small local web app for the parts of the workflow that are tedious on the comm
 - **Suites:** make your own suite, or copy a shipped one (its cases come along). A suite has a description and checks
   that apply to every case; the rest is its cases. Suites you make live in `user-suites/` (`USER_SUITES_DIR`), outside git,
   so a redeploy keeps them. The suites that ship with the repo stay read-only in the app, which keeps the repo and
-  what the app shows from drifting apart. Deleting a suite moves it to `user-suites/.trash`.
+  what the app shows from drifting apart. Deleting a suite moves it to `user-suites/.trash`. Set `SHIPPED_SUITES=hide` to show only your own suites, without the repo's examples; that's the intended setup once you have real recordings.
 
 The app is dark by default, with a Light/Dark button and a palette picker in the left rail (five presets or any three colors of your own). Both choices are remembered per browser.
 

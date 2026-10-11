@@ -20,6 +20,8 @@ export interface AppConfig {
   suitesDir: string;
   /** Suites you create in the app live here, one folder each, beside (not inside) the suites that ship with the repo. */
   userSuitesDir: string;
+  /** False hides the suites that ship with the repo (and their example cases), leaving only the suites made in the app. */
+  showShippedSuites: boolean;
   recordingsDir: string;
   fixturesDir: string;
   runsDir: string;
@@ -41,6 +43,7 @@ export function loadAppConfig(path = process.env.PROMPT_TRIALS_CONFIG ?? 'trials
     viewerPort: Number(process.env.VIEWER_PORT ?? user.viewerPort ?? 15500),
     suitesDir: user.suitesDir ?? 'suites',
     userSuitesDir: process.env.USER_SUITES_DIR ?? user.userSuitesDir ?? 'user-suites',
+    showShippedSuites: process.env.SHIPPED_SUITES ? process.env.SHIPPED_SUITES !== 'hide' : (user.showShippedSuites ?? true),
     recordingsDir: user.recordingsDir ?? 'recordings',
     fixturesDir: user.fixturesDir ?? 'fixtures',
     runsDir: user.runsDir ?? 'output/runs',
