@@ -72,7 +72,7 @@ export function listCases(cfg: AppConfig, suite: string): CaseInfo[] {
   const out: CaseInfo[] = [];
   const priv = privateFile(cfg, suite);
   for (const { path } of caseFiles(cfg, suite)) {
-    const file = cfg.privateCasesDir && path === priv ? `${suite}.yaml (private)` : path.slice(dir.length + 1);
+    const file = cfg.privateCasesDir && path === priv ? `${suite}.yaml` : path.slice(dir.length + 1);
     const list = parse(readFileSync(path, 'utf8')) as any[] | null;
     (list ?? []).forEach((c, index) => {
       out.push({

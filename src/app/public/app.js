@@ -486,7 +486,7 @@ async function viewCases(suiteName) {
           h('button', { class: 'fit', onclick: () => editCase(c, suites.map((s) => s.name), current) }, 'Edit'),
           h('button', { class: 'fit danger', onclick: async () => { if (confirm(`Delete “${c.description}”? The fixture file stays.`)) { await api(`cases/${current}/${c.index}`, { method: 'DELETE' }); route(); } } }, 'Delete')) : h('span', { class: 'muted small' }, 'example')))))))
       : h('p', { class: 'muted' }, 'This suite has no cases yet.'),
-    h('p', { class: 'muted small' }, 'Create a case from a ', h('a', { href: '#/recordings' }, 'recording'), '. Cases marked “example” come with the repo and can’t be changed here.'));
+    h('p', { class: 'muted small' }, 'Create a case from a ', h('a', { href: '#/recordings' }, 'recording'), '.', cases.some((c) => !c.editable) ? ' Cases marked “example” come with the repo and can’t be changed here.' : ''));
 }
 
 async function editCase(c, suites, suite) {
