@@ -30,6 +30,8 @@ async function api(path, opts = {}) {
   return data;
 }
 
+/** Logs written before colour was switched off still hold escape codes. */
+const stripAnsi = (t) => t.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '');
 const fmtMs = (ms) => (ms >= 10000 ? `${(ms / 1000).toFixed(0)} s` : ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms)} ms`);
 const fmtN = (n) => Math.round(n).toLocaleString();
 const fmtUsd = (n) => (n === 0 ? '$0' : n < 0.01 ? `$${n.toFixed(5)}` : `$${n.toFixed(n < 1 ? 3 : 2)}`);
@@ -141,6 +143,12 @@ function strip(totals) {
   return h('span', { class: 'strip' }, totals.flatMap((t) => [...Array(t.total)].map((_, i) => h('span', { class: `cell${i < t.passed ? '' : ' fail'}`, title: `${t.label}: ${t.passed}/${t.total}` }))));
 }
 
+function tally(totals) {
+  const passed = totals.reduce((a, t) => a + t.passed, 0);
+  const total = totals.reduce((a, t) => a + t.total, 0);
+  return h('span', { class: 'tally' }, `${passed}/${total}`);
+}
+
 async function viewRuns() {
   const { runs } = await api('runs');
   if (!runs.length) return h('div', {}, h('h1', {}, 'Runs'), h('p', { class: 'lede' }, 'Nothing has run yet. '), h('a', { href: '#/run' }, 'Start a run'));
@@ -149,8 +157,8 @@ async function viewRuns() {
     h('div', { class: 'scroll' }, h('table', {},
       h('thead', {}, h('tr', {}, ['Started', 'Suite', 'Models', 'Result', 'Took', 'Status'].map((t) => h('th', {}, t)))),
       h('tbody', {}, runs.map((r) => h('tr', { class: 'link', tabindex: 0, onclick: () => (location.hash = `#/runs/${r.id}`), onkeydown: (e) => e.key === 'Enter' && (location.hash = `#/runs/${r.id}`) },
-        h('td', {}, fmtWhen(r.startedAt)), h('td', {}, r.suite), h('td', {}, r.models.join(', ')),
-        h('td', {}, r.totals ? strip(r.totals) : ''), h('td', {}, fmtDur(r.startedAt, r.endedAt)),
+        h('td', { class: 'nowrap' }, fmtWhen(r.startedAt)), h('td', { class: 'nowrap' }, r.suite), h('td', {}, r.models.join(', ')),
+        h('td', { class: 'strip-cell' }, r.totals ? [strip(r.totals), tally(r.totals)] : ''), h('td', { class: 'nowrap' }, fmtDur(r.startedAt, r.endedAt)),
         h('td', {}, h('span', { class: `status ${r.status}` }, r.status))))))));
 }
 
@@ -173,7 +181,7 @@ function resultsView(summary) {
       h('thead', {}, h('tr', {}, h('th', {}, 'Model'), h('th', {}, 'Passed'), ['Avg time', 'Tokens in', 'cached', 'Tokens out', 'Cost'].map((t) => h('th', { class: 'num' }, t)))),
       h('tbody', {}, summary.models.map((m) => h('tr', {},
         h('td', {}, m.label),
-        h('td', {}, h('span', { class: 'bar' }, h('i', { style: `width:${m.total ? (100 * m.passed) / m.total : 0}%` })), `${m.passed}/${m.total}`),
+        h('td', { class: 'nowrap' }, h('span', { class: 'bar' }, h('i', { style: `width:${m.total ? (100 * m.passed) / m.total : 0}%` })), `${m.passed}/${m.total}`),
         h('td', { class: 'num' }, fmtMs(m.avgLatencyMs)), h('td', { class: 'num' }, fmtN(m.promptTokens)), h('td', { class: 'num' }, fmtN(m.cachedTokens)),
         h('td', { class: 'num' }, fmtN(m.completionTokens)), h('td', { class: 'num' }, fmtUsd(m.cost))))))),
     h('h2', {}, 'By test'),
@@ -181,7 +189,11 @@ function resultsView(summary) {
     h('div', { class: 'scroll' }, h('table', { class: 'grid' },
       h('thead', {}, h('tr', {}, h('th', {}, 'Test'), labels.map((l) => h('th', {}, l)))),
       h('tbody', {}, summary.tests.map((t) => h('tr', {}, h('td', {}, t.description),
-        labels.map((l) => h('td', {}, h('span', { class: 'strip big' }, (t.cells[l] ?? []).map((c, i) => cellButton(l, t, c, i)))))))))));
+        labels.map((l) => {
+          const cells = t.cells[l] ?? [];
+          return h('td', {}, h('span', { class: 'strip big' }, cells.map((c, i) => cellButton(l, t, c, i))),
+            cells.length > 1 ? h('span', { class: 'tally' }, `${cells.filter((c) => c.success).length}/${cells.length}`) : null);
+        })))))));
 }
 
 async function viewRun(id) {
@@ -193,7 +205,7 @@ async function viewRun(id) {
   async function paint(data) {
     const { run, summary } = data;
     const { up, port } = await api('viewer').catch(() => ({ up: false }));
-    const logBox = h('pre', { class: 'log', id: 'log' }, data.log ?? '');
+    const logBox = h('pre', { class: 'log', id: 'log' }, stripAnsi(data.log ?? ''));
     wrap.replaceChildren(...kids([
       h('div', {}, h('h1', {}, run.suite), h('p', { class: 'lede' }, `${run.models.join(', ')} · ${run.repeat}× · ${fmtWhen(run.startedAt)} `, h('span', { class: `status ${run.status}` }, run.status))),
       run.error && showError(new Error(run.error)),
@@ -233,7 +245,7 @@ async function viewRecordings() {
 
 async function viewRecordingDir(dir) {
   const { conversations } = await api(`recordings/${encodeURIComponent(dir)}`);
-  return h('div', {}, h('p', { class: 'small' }, h('a', { href: '#/recordings' }, 'All recordings')), h('h1', {}, dir),
+  return h('div', {}, h('p', { class: 'crumb' }, h('a', { href: '#/recordings' }, 'All recordings')), h('h1', {}, dir),
     h('p', { class: 'lede' }, `${conversations.length} conversations. Each row is one request, the model’s next step in that conversation.`),
     conversations.map((c) => h('section', {},
       h('h3', {}, c.key),
@@ -257,8 +269,9 @@ async function viewStep(dir, file) {
     d.answer.toolCalls.map((c) => h('pre', {}, `${c.name}(${JSON.stringify(c.arguments, null, 1).slice(0, 3000)})`)),
     d.answer.content && h('pre', {}, d.answer.content.slice(0, 3000)));
   return h('div', { class: 'stack' },
-    h('div', {}, h('p', { class: 'small' }, h('a', { href: `#/recordings/${dir}` }, dir)), h('h1', {}, 'Make a case from this step'),
-      h('p', { class: 'lede' }, `${d.messages.length} messages · ${d.model ?? 'model unknown'} · ${fmtMs(d.latencyMs)}. A case replays everything above the next step and checks what a model does there.`)),
+    h('div', {}, h('p', { class: 'crumb' }, h('a', { href: `#/recordings/${dir}` }, dir)), h('h1', {}, 'Make a case from this step'),
+      h('p', { class: 'lede' }, `${d.messages.length} messages · ${d.model ?? 'model unknown'} · ${fmtMs(d.latencyMs)}. A case replays everything above the next step and checks what a model does there. `,
+        h('a', { href: '#', onclick: (e) => { e.preventDefault(); document.getElementById('case-form')?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); } }, 'Go to the case form'))),
     h('div', {}, h('h2', {}, 'Conversation so far'), d.messages.map(messageView), answer),
     caseBuilder({ suites: suites.map((s) => s.name), tools: d.tools, recording: { dir, file } }));
 }
@@ -271,7 +284,7 @@ async function catalog() {
 }
 
 function caseBuilder({ suites, suite, tools = [], recording, fixture, description = '', assertions = [], index }) {
-  const root = h('form', { class: 'panel stack', onsubmit: (e) => e.preventDefault() });
+  const root = h('form', { class: 'panel stack', id: 'case-form', onsubmit: (e) => e.preventDefault() });
   const state = { items: assertions.map((a) => ({ id: a.id, values: { ...a.values } })) };
   const suiteSel = h('select', {}, suites.map((s) => h('option', { value: s, selected: s === suite }, s)));
   if (suite) suiteSel.disabled = true;
@@ -399,11 +412,27 @@ async function editCase(c, suites, suite) {
   const known = c.assertions.filter((a) => a.id).map((a) => ({ id: a.id, values: a.values }));
   const unknown = c.assertions.length - known.length;
   main.replaceChildren(...kids([
-    h('p', { class: 'small' }, h('a', { href: `#/cases/${suite}` }, 'Back to cases')),
+    h('p', { class: 'crumb' }, h('a', { href: `#/cases/${suite}` }, 'Back to cases')),
     h('h1', {}, 'Edit case'),
     unknown ? h('div', { class: 'notice' }, `${unknown} check(s) in this case use settings the builder can’t show. Saving here drops them; edit the YAML by hand to keep them.`) : null,
     caseBuilder({ suites, suite, fixture: c.fixture, description: c.description, assertions: known, index: c.index, tools: [] })]));
 }
+
+// ---------------------------------------------------------------- theme
+const THEME_KEY = 'prompt-trials.theme';
+const themeBtn = document.getElementById('theme-btn');
+const themeLabel = () => (document.documentElement.getAttribute('data-theme') === 'light' ? '🌙 Dark' : '☀️ Light');
+themeBtn.textContent = themeLabel();
+themeBtn.addEventListener('click', () => {
+  const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', next);
+  try {
+    localStorage.setItem(THEME_KEY, next);
+  } catch {
+    // the choice just won't persist
+  }
+  themeBtn.textContent = themeLabel();
+});
 
 // ---------------------------------------------------------------- viewer link
 api('viewer').then(({ up, port }) => {

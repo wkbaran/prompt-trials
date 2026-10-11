@@ -1,22 +1,28 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Prompt Trials</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;700&display=swap">
+<script>
+  try { if (localStorage.getItem("prompt-trials.theme") === "light") document.documentElement.setAttribute("data-theme", "light"); } catch (e) {}
+</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%277%27 height=%277%27 rx=%271%27 fill=%27%232f7d4f%27/%3E%3Crect x=%279%27 width=%277%27 height=%277%27 rx=%271%27 fill=%27%23b3382c%27/%3E%3Crect y=%279%27 width=%277%27 height=%277%27 rx=%271%27 fill=%27%232f7d4f%27/%3E%3Crect x=%279%27 y=%279%27 width=%277%27 height=%277%27 rx=%271%27 fill=%27%232f7d4f%27/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <nav class="rail" aria-label="Main">
-  <a class="brand" href="#/run">Prompt Trials</a>
+  <a class="brand" href="#/run"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Prompt Trials</a>
   <a href="#/run" data-nav="run">New run</a>
   <a href="#/runs" data-nav="runs">Runs</a>
   <a href="#/recordings" data-nav="recordings">Recordings</a>
   <a href="#/cases" data-nav="cases">Cases</a>
-  <a class="rail-foot" id="viewer-link" href="#" target="_blank" rel="noopener" hidden>promptfoo viewer</a>
+  <div class="rail-foot">
+    <a id="viewer-link" href="#" target="_blank" rel="noopener" hidden>promptfoo viewer</a>
+    <button id="theme-btn" class="theme-btn" type="button">☀️ Light</button>
+  </div>
 </nav>
 <main id="main" tabindex="-1"></main>
 <aside id="drawer" class="drawer" hidden aria-live="polite"></aside>
