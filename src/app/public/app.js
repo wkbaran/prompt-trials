@@ -1,4 +1,6 @@
 // Prompt Trials control app. Plain DOM, no build step; all text goes in as text nodes.
+/** Every link to the promptfoo viewer uses this name, so the browser reuses one tab. (No rel=noopener: it would force a new window each time.) */
+const VIEWER_TAB = 'prompt-trials-viewer';
 const main = document.getElementById('main');
 const drawer = document.getElementById('drawer');
 
@@ -213,7 +215,7 @@ async function viewRun(id) {
       run.error && showError(new Error(run.error)),
       run.status === 'running' && h('div', {}, h('button', { class: 'danger', onclick: () => api(`runs/${id}/cancel`, { method: 'POST', body: {} }) }, 'Cancel run')),
       summary && summary.tests.length ? resultsView(summary) : run.status === 'running' ? h('p', { class: 'muted' }, 'Running… results appear when it finishes.') : null,
-      run.evalId && up && h('p', {}, h('a', { href: `http://${location.hostname}:${port}/eval/${run.evalId}`, target: '_blank', rel: 'noopener' }, 'Open in the promptfoo viewer')),
+      run.evalId && up && h('p', {}, h('a', { href: `http://${location.hostname}:${port}/eval/${run.evalId}`, target: VIEWER_TAB }, 'Open in the promptfoo viewer')),
       h('h2', {}, 'Log'), logBox]));
     if (run.status === 'running') {
       const es = new EventSource(`/api/runs/${id}/log`);
@@ -493,6 +495,7 @@ themeBtn.addEventListener('click', () => {
 // ---------------------------------------------------------------- viewer link
 api('viewer').then(({ up, port }) => {
   const a = document.getElementById('viewer-link');
+  a.target = VIEWER_TAB;
   if (up) { a.href = `http://${location.hostname}:${port}/`; a.hidden = false; }
 }).catch(() => {});
 
