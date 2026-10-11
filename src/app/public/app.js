@@ -153,17 +153,39 @@ function tally(totals) {
   return h('span', { class: 'tally' }, `${passed}/${total}`);
 }
 
+const RUNS_FILTER_KEY = 'prompt-trials.runs-suite';
+const rememberedSuite = () => { try { return localStorage.getItem(RUNS_FILTER_KEY) ?? ''; } catch { return ''; } };
+const rememberSuite = (v) => { try { localStorage.setItem(RUNS_FILTER_KEY, v); } catch { /* the filter just resets next time */ } };
+
 async function viewRuns() {
   const { runs } = await api('runs');
   if (!runs.length) return h('div', {}, h('h1', {}, 'Runs'), h('p', { class: 'lede' }, 'Nothing has run yet. '), h('a', { href: '#/run' }, 'Start a run'));
+  const suites = [...new Set(runs.map((r) => r.suite))].sort();
+  let chosen = suites.includes(rememberedSuite()) ? rememberedSuite() : '';
+  const count = h('span', { class: 'muted small' });
+  const body = h('tbody');
+  const open = (r) => (location.hash = `#/runs/${r.id}`);
+
+  function paint() {
+    const shown = chosen ? runs.filter((r) => r.suite === chosen) : runs;
+    count.textContent = `${shown.length} of ${runs.length} runs`;
+    body.replaceChildren(...shown.map((r) => h('tr', { class: 'link', tabindex: 0, onclick: () => open(r), onkeydown: (e) => e.key === 'Enter' && open(r) },
+      h('td', { class: 'nowrap' }, fmtWhen(r.startedAt)), h('td', { class: 'nowrap' }, r.suite), h('td', {}, r.models.join(', ')),
+      h('td', { class: 'strip-cell' }, r.totals ? [strip(r.totals), tally(r.totals)] : ''), h('td', { class: 'nowrap' }, fmtDur(r.startedAt, r.endedAt)),
+      h('td', {}, h('span', { class: `status ${r.status}` }, r.status)))));
+  }
+  paint();
+
+  const pick = h('select', { id: 'runs-suite', onchange: (e) => { chosen = e.target.value; rememberSuite(chosen); paint(); } },
+    h('option', { value: '' }, 'All suites'), suites.map((name) => h('option', { value: name, selected: name === chosen }, name)));
   return h('div', {},
     h('h1', {}, 'Runs'),
+    h('div', { class: 'row', style: 'margin-bottom:.9rem' },
+      h('div', { class: 'fit' }, h('label', { for: 'runs-suite', style: 'margin-top:0' }, 'Suite'), pick),
+      h('div', { class: 'fit' }, count)),
     h('div', { class: 'scroll' }, h('table', {},
       h('thead', {}, h('tr', {}, ['Started', 'Suite', 'Models', 'Result', 'Took', 'Status'].map((t) => h('th', {}, t)))),
-      h('tbody', {}, runs.map((r) => h('tr', { class: 'link', tabindex: 0, onclick: () => (location.hash = `#/runs/${r.id}`), onkeydown: (e) => e.key === 'Enter' && (location.hash = `#/runs/${r.id}`) },
-        h('td', { class: 'nowrap' }, fmtWhen(r.startedAt)), h('td', { class: 'nowrap' }, r.suite), h('td', {}, r.models.join(', ')),
-        h('td', { class: 'strip-cell' }, r.totals ? [strip(r.totals), tally(r.totals)] : ''), h('td', { class: 'nowrap' }, fmtDur(r.startedAt, r.endedAt)),
-        h('td', {}, h('span', { class: `status ${r.status}` }, r.status))))))));
+      body)));
 }
 
 function cellButton(model, test, c, i) {
