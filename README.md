@@ -160,11 +160,12 @@ Shared checks live in `src/assertions.ts` and are used from a suite's `cases.yam
 |---|---|
 | `callsTool` / `avoidsTool` | calling `finish` before every batch was read; skipping a required step |
 | `validToolArguments` | malformed tool-call JSON |
-| `delegatedRefsPreserved` | a model renumbering or reordering items when it delegates |
+| `delegatedRefsPreserved` | a model renumbering, inventing or reordering refs when it delegates |
+| `noTemplateMarkers` | unexpanded placeholders such as `<the ref>` left in a subagent goal |
 | `noRepeatedItems` | adding the same track or item twice |
 | `startsWith`, `maxLength` | reply format and length caps |
 
-An MCP wrapper such as `tool_call` is unwrapped automatically. Everything else in promptfoo's
+An MCP wrapper such as `tool_call` (single or batched calls, with `mcp__server__` name prefixes) is unwrapped automatically. Everything else in promptfoo's
 assertion library (`not-icontains`, `llm-rubric`, …) works too.
 
 ## Layout

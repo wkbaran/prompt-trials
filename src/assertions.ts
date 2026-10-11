@@ -30,19 +30,21 @@ const ok = (reason: string): Result => ({ pass: true, score: 1, reason });
 const bad = (reason: string): Result => ({ pass: false, score: 0, reason });
 
 /**
- * Hermes may route MCP tools through a generic wrapper such as `tool_call`
- * ({ name, arguments }). Unwrap it so assertions see the real tool name.
- * `wrapper` in assertion config names the wrapper function (default "tool_call").
+ * Hermes routes MCP tools through a generic wrapper such as `tool_call`. Unwrap it so assertions see
+ * the real tool name. The wrapper takes either one call ({ name, arguments }) or a batch
+ * ({ calls: [{ name, arguments }] }). `wrapper` in assertion config names the wrapper (default "tool_call").
+ * MCP names like `mcp__medium_reader__digest_finish` are shortened to `digest_finish`.
  */
 export function unwrap(calls: Call[], wrapper = 'tool_call'): Call[] {
-  return calls.map((c) => {
-    const a = c.arguments;
-    if (c.name === wrapper && a && typeof a === 'object') {
-      const name = a.name ?? a.tool ?? a.tool_name;
-      if (typeof name === 'string') return { name, arguments: a.arguments ?? a.args ?? a.input ?? {} };
-    }
-    return c;
-  });
+  const short = (n: string) => n.replace(/^mcp__[^_]+(?:_[^_]+)*?__/, '');
+  return calls
+    .flatMap((c): Call[] => {
+      const a = c.arguments;
+      if (c.name !== wrapper || !a || typeof a !== 'object') return [c];
+      const inner: any[] = Array.isArray(a.calls) ? a.calls : [a];
+      return inner.map((i) => ({ name: i.name ?? i.tool ?? i.tool_name ?? c.name, arguments: i.arguments ?? i.args ?? i.input ?? {} }));
+    })
+    .map((c) => ({ ...c, name: typeof c.name === 'string' ? short(c.name) : c.name }));
 }
 
 export function callsOf(output: Output, ctx?: Ctx): Call[] {
@@ -114,14 +116,19 @@ export function startsWith(output: Output, ctx: Ctx): Result {
 /**
  * Refs (e.g. P1, F3) in delegate_task goals must be exactly the refs the work list showed:
  * no invented refs, none duplicated, each in the order the list gave them.
- * config: { tool?: "delegate_task", refPattern?: "\\b[A-Z]\\d+\\b", listedIn?: tool name whose result lists refs }
+ * config: { tool?: "delegate_task", refPattern?: regex of a ref, listedIn?: only tool results containing this
+ *           text count as the work list (e.g. "digest_begin"), ordered?: false to allow any order (default true),
+ *           unique?: false to let a ref appear in several goals (default true) }
  */
 export function delegatedRefsPreserved(output: Output, ctx: Ctx): Result {
   const refRe = new RegExp(ctx.config?.refPattern ?? '\\b[PFTY]\\d+\\b', 'g');
   const tool = ctx.config?.tool ?? 'delegate_task';
   const listed = new Set<string>();
   for (const m of fixtureMessages(ctx)) {
-    if (m.role === 'tool' && typeof m.content === 'string') for (const r of m.content.match(refRe) ?? []) listed.add(r);
+    if (m.role !== 'tool' || typeof m.content !== 'string') continue;
+    if (ctx.config?.listedIn && !m.content.includes(ctx.config.listedIn)) continue;
+    // MCP results arrive as JSON text, so line breaks are the two characters \n and defeat \b.
+    for (const r of m.content.replace(/\\n/g, ' ').match(refRe) ?? []) listed.add(r);
   }
   const order = [...listed];
   const used: string[] = [];
@@ -132,7 +139,8 @@ export function delegatedRefsPreserved(output: Output, ctx: Ctx): Result {
   if (!used.length) return bad(`no refs found in ${tool} goals`);
   const unknown = used.filter((r) => !listed.has(r));
   if (unknown.length) return bad(`refs not in the work list: ${[...new Set(unknown)]}`);
-  if (new Set(used).size !== used.length) return bad('a ref appears in more than one goal');
+  if (ctx.config?.unique !== false && new Set(used).size !== used.length) return bad('a ref appears in more than one goal');
+  if (ctx.config?.ordered === false) return ok(`refs ${used.join(' ')} all in the work list`);
   const idx = used.map((r) => order.indexOf(r));
   const sorted = [...idx].sort((a, b) => a - b);
   return idx.every((v, i) => v === sorted[i]) ? ok(`refs ${used.join(' ')} unchanged`) : bad(`refs reordered: ${used.join(' ')}`);
@@ -143,4 +151,18 @@ export function maxLength(output: Output, ctx: Ctx): Result {
   const max = ctx.config?.max ?? 280;
   const len = (output.content ?? '').length;
   return len <= max ? ok(`${len} chars`) : bad(`${len} chars > ${max}`);
+}
+
+/**
+ * Goals sent to a subagent must not contain unexpanded placeholders such as `<the ref>` or `{chat id}`,
+ * which Hermes's delegate_task rejects. config: { tool?: "delegate_task" }
+ */
+export function noTemplateMarkers(output: Output, ctx: Ctx): Result {
+  const tool = ctx.config?.tool ?? 'delegate_task';
+  const marker = /<[A-Za-z][^<>\n]*\s[^<>\n]*>|\{[A-Za-z][^{}\n"]*\s[^{}\n"]*\}/;
+  const hits = callsOf(output, ctx)
+    .filter((c) => c.name === tool)
+    .flatMap((c) => (c.arguments?.tasks ?? [c.arguments]).map((t: any) => `${t?.goal ?? ''}`.match(marker)?.[0]))
+    .filter(Boolean);
+  return hits.length ? bad(`placeholder left in goal: ${hits[0]}`) : ok('no placeholders in goals');
 }
