@@ -18,6 +18,7 @@ services:
       TRIALS_AUTH_USER: ${TRIALS_AUTH_USER:?set TRIALS_AUTH_USER in .env}
       TRIALS_AUTH_PASSWORD: ${TRIALS_AUTH_PASSWORD:?set TRIALS_AUTH_PASSWORD in .env}
       LITELLM_API_KEY: ${LITELLM_API_KEY:-}
+      LITELLM_URL: ${LITELLM_URL:-}   # with the key, lets the Recordings page import runs from the proxy's logs
       OLLAMA_URL: ${OLLAMA_URL:-}
       # SHIPPED_SUITES: hide   # uncomment to show only suites made in the app, not the repo's examples
       TZ: ${TZ:-UTC}

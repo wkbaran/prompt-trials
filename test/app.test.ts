@@ -9,6 +9,8 @@ import { caseFiles, checkAssertions, deleteCase, listCases, requireSuite, saveCa
 import type { AppConfig } from '../src/app/config.ts';
 import { guardWarnings, isLocalModel, windowWarnings } from '../src/app/guard.ts';
 import { runConfig } from '../src/app/runs.ts';
+import { clusterRows, describeRun, listSpend, makeClient, timestampKey, toRecording } from '../src/litellm.ts';
+import { importedPrefixes, importWindow, recentRuns } from '../src/app/litellm-runs.ts';
 import { createSuite, deleteSuite, getSuite, listSuites, updateSuite } from '../src/app/suites.ts';
 import { basicAuthOk, credentialsFromEnv } from '../src/app/auth.ts';
 import { summarize } from '../src/app/summarize.ts';
@@ -189,4 +191,59 @@ test('hiding the shipped suites leaves only your own, and frees their names', ()
   const [suite] = listSuites(cfg);
   assert.deepEqual([suite!.name, suite!.kind, suite!.cases], ['medium-digest', 'user', 1]);
   assert.deepEqual(listCases(cfg, 'medium-digest').map((c) => [c.description, c.editable]), [['my real case', true]]); // no synthetic example
+});
+
+const row = (id: string, startTime: string, over: Record<string, unknown> = {}) => ({ request_id: id, model: 'qwen', call_type: 'acompletion', prompt_tokens: 100, spend: 0.5, startTime, endTime: startTime, ...over });
+
+/** A LiteLLM stand-in: serves rows from the list endpoint, and one stored request per row from the detail endpoint. */
+function fakeProxy(rows: ReturnType<typeof row>[], firstUser = 'plain request') {
+  const calls: string[] = [];
+  const fetchImpl = (async (url: string) => {
+    calls.push(url);
+    const u = new URL(url);
+    if (u.pathname === '/spend/logs/ui') {
+      const at = (p: string) => Date.parse(`${u.searchParams.get(p)!.replace(' ', 'T')}Z`);
+      const inRange = rows.filter((r) => Date.parse(r.startTime) >= at('start_date') && Date.parse(r.startTime) <= at('end_date'));
+      return { ok: true, json: async () => ({ data: u.searchParams.get('page') === '1' ? inRange.slice(0, 2) : inRange.slice(2), total_pages: 2 }) };
+    }
+    const r = rows.find((x) => x.request_id === u.searchParams.get('request_id'))!;
+    return { ok: true, json: async () => [{ request_id: r.request_id, startTime: r.startTime.replace(/\.(\d{3})\+00:00$/, '.$1000Z'), status: 'success', request_duration_ms: 5, prompt_tokens: 100,
+      proxy_server_request: { model: 'qwen', messages: [{ role: 'user', content: firstUser }], tools: [] },
+      response: { choices: [{ message: { content: 'hi' }, finish_reason: 'stop' }], usage: {} } }] };
+  }) as unknown as typeof fetch;
+  return { client: makeClient('http://proxy', 'k', fetchImpl), calls };
+}
+
+test('litellm: paging, clustering, labels and what counts as an agent request', async () => {
+  const rows = [row('a', '2026-10-11T12:00:00.000+00:00'), row('b', '2026-10-11T12:02:00.000+00:00'), row('c', '2026-10-11T12:15:00.000+00:00'),
+    row('j', '2026-10-11T12:15:30.000+00:00', { model: 'jev' }), row('e', '2026-10-11T12:16:00.000+00:00', { call_type: 'aembedding' })];
+  const { client } = fakeProxy(rows);
+  const listed = await listSpend(client, new Date('2026-10-11T00:00:00Z'), new Date('2026-10-12T00:00:00Z'));
+  assert.equal(listed.length, 5); // both pages read
+  const clusters = clusterRows(listed.filter((r) => r.model !== 'jev' && !r.call_type!.includes('embedding')));
+  assert.deepEqual(clusters.map((c) => c.rows.length), [2, 1]); // a 13 minute gap splits the runs
+  assert.equal(describeRun([{ role: 'system', content: 'x' }, { role: 'user', content: 'foo [IMPORTANT: The user has invoked the "medium-digest" skill, indicating' }]), 'medium-digest');
+  assert.equal(describeRun([{ role: 'user', content: 'You are a cron subagent reading Medium posts' }]), 'You are a cron subagent reading Medium posts');
+  assert.equal(timestampKey('2026-10-11T12:00:07.057+00:00'), '2026-10-11T12-00-07-057'); // as the list endpoint gives it
+  assert.equal(timestampKey('2026-10-11T12:00:07.057000Z'), '2026-10-11T12-00-07-057'); // as the stored request (and the file name) has it
+  assert.equal(toRecording({ proxy_server_request: {} }), undefined);
+});
+
+test('recent runs are labelled and marked imported; importing writes recordings', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'pt-ll-'));
+  const cfg = { recordingsDir: join(root, 'recordings') } as AppConfig;
+  const rows = [row('a', '2026-10-11T12:00:00.000+00:00'), row('b', '2026-10-11T12:01:00.000+00:00'), row('c', '2026-10-11T12:30:00.000+00:00')];
+  const { client } = fakeProxy(rows, 'x [IMPORTANT: The user has invoked the "substack-digest" skill, y');
+  const now = new Date('2026-10-11T13:00:00Z');
+
+  let runs = await recentRuns(cfg, client, 3, now);
+  assert.deepEqual(runs.map((r) => [r.label, r.requests, r.imported]), [['substack-digest', 1, false], ['substack-digest', 2, false]]); // newest first
+  assert.deepEqual(await importWindow(cfg, client, runs[1]!.start, runs[1]!.end, 'first-run'), { written: 2, skipped: 0 });
+  assert.equal(readdirSync(join(root, 'recordings', 'first-run')).length, 2);
+  assert.deepEqual([...importedPrefixes(cfg).values()], ['first-run', 'first-run']);
+
+  runs = await recentRuns(cfg, client, 3, now);
+  assert.deepEqual(runs.map((r) => [r.imported, r.importedAs]), [[false, undefined], [true, 'first-run']]);
+  await assert.rejects(importWindow(cfg, client, '2026-10-11T12:00:00Z', '2026-10-11T12:01:00Z', '../escape'), /folder names/);
+  await assert.rejects(importWindow(cfg, client, '2026-10-11T00:00:00Z', '2026-10-12T00:00:00Z', 'wide'), /not a single run/);
 });

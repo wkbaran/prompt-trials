@@ -259,14 +259,87 @@ async function viewRun(id) {
 }
 
 // ---------------------------------------------------------------- recordings
+const slug = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'run';
+
+const shortModel = (m) => m.replace(/^(openai|anthropic|ollama_chat|ollama)\//, '').replace(/:latest$/, '');
+const fmtSpan = (ms) => (ms >= 120000 ? `${Math.round(ms / 60000)} min` : fmtMs(ms));
+const MIN_RUN = 5;
+
+/** The "recent runs from LiteLLM" panel: finds runs in the proxy's logs and imports one with a click. */
+function litellmPanel() {
+  const days = h('select', { 'aria-label': 'How far back', onchange: load }, [[1, 'Last day'], [3, 'Last 3 days'], [7, 'Last 7 days']].map(([v, t]) => h('option', { value: v, selected: v === 3 }, t)));
+  const hideShort = h('input', { type: 'checkbox', checked: true, onchange: () => paint() });
+  const body = h('div');
+  let runs = [];
+  const panel = h('section', { class: 'panel stack' },
+    h('div', { class: 'row' }, h('div', {}, h('h2', { style: 'margin:0' }, 'Import from LiteLLM'),
+      h('p', { class: 'muted small', style: 'margin:.2rem 0 0' }, 'Runs the proxy has logged. Importing copies a run’s requests into a recordings folder.')),
+      h('div', { class: 'fit' }, days)),
+    h('label', { class: 'check', style: 'margin:0' }, hideShort, `Hide runs of fewer than ${MIN_RUN} requests`),
+    body);
+
+  async function importRun(r, button) {
+    const day = new Date(r.start).toISOString().slice(0, 10);
+    const folder = prompt('Save this run in the recordings folder named:', `${day}-${slug(r.label)}`);
+    if (!folder) return;
+    button.disabled = true;
+    button.textContent = 'Importing…';
+    try {
+      const out = await api('litellm/import', { body: { start: r.start, end: r.end, folder } });
+      if (!out.written) throw new Error('Nothing was imported. Does the proxy keep request bodies (store_prompts_in_spend_logs)?');
+      location.hash = `#/recordings/${folder}`;
+    } catch (e) {
+      button.disabled = false;
+      button.textContent = 'Import';
+      body.prepend(showError(e));
+    }
+  }
+
+  function paint() {
+    const shown = hideShort.checked ? runs.filter((r) => r.requests >= MIN_RUN) : runs;
+    if (!shown.length) return body.replaceChildren(h('p', { class: 'muted' }, runs.length ? `No runs of ${MIN_RUN}+ requests in that period. Untick the box to see ${runs.length} shorter ones.` : 'No runs in that period.'));
+    body.replaceChildren(h('div', { class: 'scroll' }, h('table', {},
+      h('thead', {}, h('tr', {}, h('th', {}, 'Started'), h('th', {}, 'Run'), h('th', { class: 'num' }, 'Requests'), h('th', { class: 'wide' }, 'Models'), h('th', { class: 'num wide' }, 'Tokens in'), h('th', { class: 'num' }, 'Cost'), h('th', {}, ''))),
+      h('tbody', {}, shown.map((r) => {
+        const names = r.models.map(shortModel);
+        return h('tr', {},
+          h('td', { class: 'nowrap' }, fmtWhen(r.start), h('div', { class: 'muted small' }, fmtSpan(new Date(r.end) - new Date(r.start)))),
+          h('td', { style: 'min-width:9rem' }, r.label),
+          h('td', { class: 'num' }, r.requests),
+          h('td', { class: 'wide', title: names.join(', ') }, names.slice(0, 2).join(', '), names.length > 2 ? h('span', { class: 'muted' }, ` +${names.length - 2}`) : null),
+          h('td', { class: 'num wide' }, fmtN(r.promptTokens)),
+          h('td', { class: 'num' }, fmtUsd(r.spend)),
+          h('td', { class: 'nowrap' }, r.imported
+            ? h('a', { href: `#/recordings/${r.importedAs}` }, `In ${r.importedAs}`)
+            : h('button', { type: 'button', onclick: (e) => importRun(r, e.target) }, 'Import')));
+      })))));
+  }
+
+  async function load() {
+    body.replaceChildren(h('p', { class: 'muted' }, 'Looking for runs…'));
+    try {
+      const out = await api(`litellm/recent?days=${days.value}`);
+      if (!out.configured) return body.replaceChildren(h('p', { class: 'muted' }, 'LiteLLM isn’t set up for this app. It needs LITELLM_URL and LITELLM_API_KEY in its environment.'));
+      runs = out.runs;
+      paint();
+    } catch (e) {
+      body.replaceChildren(showError(e));
+    }
+  }
+  load();
+  return panel;
+}
+
 async function viewRecordings() {
   const { dirs } = await api('recordings');
-  if (!dirs.length) return h('div', {}, h('h1', {}, 'Recordings'), h('p', { class: 'lede' }, 'No recordings yet. Import them from LiteLLM or capture them with the recording proxy (see the README), into recordings/<name>.'));
-  return h('div', {}, h('h1', {}, 'Recordings'),
-    h('p', { class: 'lede' }, 'Every recorded request is a snapshot of an agent mid-task. Pick one to turn it into a test case.'),
-    h('div', { class: 'scroll' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Folder'), h('th', { class: 'num' }, 'Requests'))),
-      h('tbody', {}, dirs.map((d) => h('tr', { class: 'link', tabindex: 0, onclick: () => (location.hash = `#/recordings/${d.name}`), onkeydown: (e) => e.key === 'Enter' && (location.hash = `#/recordings/${d.name}`) },
-        h('td', {}, d.name), h('td', { class: 'num' }, d.files)))))));
+  return h('div', { class: 'stack' },
+    h('div', {}, h('h1', {}, 'Recordings'), h('p', { class: 'lede' }, 'Every recorded request is a snapshot of an agent mid-task. Pick one to turn it into a test case.')),
+    litellmPanel(),
+    dirs.length
+      ? h('div', { class: 'scroll' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Folder'), h('th', { class: 'num' }, 'Requests'))),
+          h('tbody', {}, dirs.map((d) => h('tr', { class: 'link', tabindex: 0, onclick: () => (location.hash = `#/recordings/${d.name}`), onkeydown: (e) => e.key === 'Enter' && (location.hash = `#/recordings/${d.name}`) },
+            h('td', {}, d.name), h('td', { class: 'num' }, d.files))))))
+      : h('p', { class: 'muted' }, 'No recordings yet. Import a run above.'));
 }
 
 async function viewRecordingDir(dir) {

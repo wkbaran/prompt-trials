@@ -16,11 +16,14 @@ import { guardWarnings, isLocalModel } from './guard.ts';
 import { viewerProxy } from './proxy.ts';
 import { conversations, cutFixture, listRecordingDirs, stepDetail } from './recordings.ts';
 import { promptfooEnv, RunManager } from './runs.ts';
+import { importWindow, recentRuns } from './litellm-runs.ts';
+import { makeClient } from '../litellm.ts';
 import { createSuite, deleteSuite, getSuite, listSuites, updateSuite } from './suites.ts';
 
 const cfg = loadAppConfig();
 const creds = credentialsFromEnv();
 const runs = new RunManager(cfg);
+const litellm = process.env.LITELLM_URL && process.env.LITELLM_API_KEY ? makeClient(process.env.LITELLM_URL, process.env.LITELLM_API_KEY) : undefined;
 /** promptfoo's viewer runs on this loopback-only port; the public viewer port is the app's own proxy in front of it. */
 const viewerInternalPort = cfg.viewerPort + 1;
 const PUBLIC = join(import.meta.dirname, 'public');
@@ -183,6 +186,18 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
         req.on('close', off);
       }
       return;
+    }
+  }
+
+  if (a === 'litellm') {
+    if (!litellm) return send(res, 200, { configured: false, runs: [] });
+    if (method === 'GET' && b === 'recent') {
+      const days = Math.max(1, Math.min(14, Number(url.searchParams.get('days') ?? 3) || 3));
+      return send(res, 200, { configured: true, runs: await recentRuns(cfg, litellm, days) });
+    }
+    if (method === 'POST' && b === 'import') {
+      const body = await readJson(req);
+      return send(res, 200, await importWindow(cfg, litellm, String(body.start), String(body.end), String(body.folder)));
     }
   }
 

@@ -192,3 +192,6 @@ pre { background: var(--ground); border: 1px solid var(--line); border-radius: v
   button, .cell, .rail a { transition: border-color .12s, background-color .12s; }
 }
 #runs-suite { min-width: 14rem; }
+
+/* Columns that give way first when the page is narrow, so the action stays in view. */
+@media (max-width: 75rem) { .wide { display: none; } }

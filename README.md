@@ -167,6 +167,7 @@ A small local web app for the parts of the workflow that are tedious on the comm
   promptfoo, so its own viewer is one click away.
 - **GPU guard:** a run with a local model warns when a configured busy window is active or about to start, or when Ollama
   has a different model loaded. Copy `trials.config.example.yaml` to `trials.config.yaml` to describe your windows.
+- **Import from LiteLLM:** with `LITELLM_URL` and `LITELLM_API_KEY` set, the Recordings page lists the proxy's recent runs (requests close together in time, labelled with the skill they invoked), marks the ones already imported, and imports one into a recordings folder with a click. The key needs permission to read spend logs.
 - **Recordings and cases:** browse imported conversations, open a step, read the conversation and the answer that was
   recorded, then build a case from it: choose assertions from a list, try them against the recorded answer, and save.
   Cases land in the suite's `cases.private.yaml` (the previous version is kept as `.bak`) and fixtures under `fixtures/`.
