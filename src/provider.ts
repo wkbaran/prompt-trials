@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { computeCost } from './cost.js';
-import { getModel, loadRegistry } from './registry.js';
+import { computeCost } from './cost.ts';
+import { getModel, loadRegistry } from './registry.ts';
 
 /**
  * Promptfoo custom provider. Sends a recorded chat conversation (fixture) to one

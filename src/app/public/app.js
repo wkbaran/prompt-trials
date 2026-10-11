@@ -269,13 +269,17 @@ const MIN_RUN = 5;
 function litellmPanel() {
   const days = h('select', { 'aria-label': 'How far back', onchange: load }, [[1, 'Last day'], [3, 'Last 3 days'], [7, 'Last 7 days']].map(([v, t]) => h('option', { value: v, selected: v === 3 }, t)));
   const hideShort = h('input', { type: 'checkbox', checked: true, onchange: () => paint() });
+  const showHidden = h('input', { type: 'checkbox', onchange: () => paint() });
+  const hiddenCount = h('span');
   const body = h('div');
   let runs = [];
   const panel = h('section', { class: 'panel stack' },
     h('div', { class: 'row' }, h('div', {}, h('h2', { style: 'margin:0' }, 'Import from LiteLLM'),
       h('p', { class: 'muted small', style: 'margin:.2rem 0 0' }, 'Runs the proxy has logged. Importing copies a run’s requests into a recordings folder.')),
       h('div', { class: 'fit' }, days)),
-    h('label', { class: 'check', style: 'margin:0' }, hideShort, `Hide runs of fewer than ${MIN_RUN} requests`),
+    h('div', { class: 'row' },
+      h('label', { class: 'check fit', style: 'margin:0' }, hideShort, `Hide runs of fewer than ${MIN_RUN} requests`),
+      h('label', { class: 'check fit', style: 'margin:0' }, showHidden, 'Show runs I hid', hiddenCount)),
     body);
 
   async function importRun(r, button) {
@@ -295,9 +299,21 @@ function litellmPanel() {
     }
   }
 
+  async function hide(r, hidden) {
+    try {
+      await api('litellm/hide', { body: { start: r.start, hidden } });
+      r.hidden = hidden;
+      paint();
+    } catch (e) {
+      body.prepend(showError(e));
+    }
+  }
+
   function paint() {
-    const shown = hideShort.checked ? runs.filter((r) => r.requests >= MIN_RUN) : runs;
-    if (!shown.length) return body.replaceChildren(h('p', { class: 'muted' }, runs.length ? `No runs of ${MIN_RUN}+ requests in that period. Untick the box to see ${runs.length} shorter ones.` : 'No runs in that period.'));
+    const nHidden = runs.filter((r) => r.hidden).length;
+    hiddenCount.textContent = nHidden ? ` (${nHidden})` : '';
+    const shown = runs.filter((r) => (showHidden.checked || !r.hidden) && (!hideShort.checked || r.requests >= MIN_RUN));
+    if (!shown.length) return body.replaceChildren(h('p', { class: 'muted' }, runs.length ? `Nothing to show. ${runs.length} run(s) are hidden by the filters above.` : 'No runs in that period.'));
     body.replaceChildren(h('div', { class: 'scroll' }, h('table', {},
       h('thead', {}, h('tr', {}, h('th', {}, 'Started'), h('th', {}, 'Run'), h('th', { class: 'num' }, 'Requests'), h('th', { class: 'wide' }, 'Models'), h('th', { class: 'num wide' }, 'Tokens in'), h('th', { class: 'num' }, 'Cost'), h('th', {}, ''))),
       h('tbody', {}, shown.map((r) => {
@@ -309,9 +325,11 @@ function litellmPanel() {
           h('td', { class: 'wide', title: names.join(', ') }, names.slice(0, 2).join(', '), names.length > 2 ? h('span', { class: 'muted' }, ` +${names.length - 2}`) : null),
           h('td', { class: 'num wide' }, fmtN(r.promptTokens)),
           h('td', { class: 'num' }, fmtUsd(r.spend)),
-          h('td', { class: 'nowrap' }, r.imported
-            ? h('a', { href: `#/recordings/${r.importedAs}` }, `In ${r.importedAs}`)
-            : h('button', { type: 'button', onclick: (e) => importRun(r, e.target) }, 'Import')));
+          h('td', { class: 'nowrap' },
+            r.imported
+              ? h('a', { href: `#/recordings/${r.importedAs}` }, `In ${r.importedAs}`)
+              : r.hidden ? null : h('button', { type: 'button', onclick: (e) => importRun(r, e.target) }, 'Import'),
+            r.imported ? null : h('button', { type: 'button', class: 'quiet', onclick: () => hide(r, !r.hidden) }, r.hidden ? 'Show again' : 'Hide')));
       })))));
   }
 

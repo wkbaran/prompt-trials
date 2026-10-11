@@ -16,7 +16,7 @@ import { guardWarnings, isLocalModel } from './guard.ts';
 import { viewerProxy } from './proxy.ts';
 import { conversations, cutFixture, deleteRecordingDir, listRecordingDirs, stepDetail } from './recordings.ts';
 import { promptfooEnv, RunManager } from './runs.ts';
-import { importWindow, recentRuns } from './litellm-runs.ts';
+import { importWindow, recentRuns, setHidden } from './litellm-runs.ts';
 import { makeClient } from '../litellm.ts';
 import { createSuite, deleteSuite, getSuite, listSuites, updateSuite } from './suites.ts';
 
@@ -69,6 +69,7 @@ function registryOrEmpty() {
 let viewer: ChildProcess | undefined;
 let viewerUp = false;
 function startViewer() {
+  if (process.env.VIEWER === 'off') return; // for tests and for hosts that do not want it
   const loopback = pathToFileURL(join(import.meta.dirname, 'bind-loopback.mjs')).href;
   const env = { ...promptfooEnv(), NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${loopback}`.trim() };
   viewer = spawn(join('node_modules', '.bin', 'promptfoo'), ['view', '-p', String(viewerInternalPort), '-n'], { env, stdio: 'ignore' });
@@ -195,6 +196,11 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
     if (method === 'GET' && b === 'recent') {
       const days = Math.max(1, Math.min(14, Number(url.searchParams.get('days') ?? 3) || 3));
       return send(res, 200, { configured: true, runs: await recentRuns(cfg, litellm, days) });
+    }
+    if (method === 'POST' && b === 'hide') {
+      const body = await readJson(req);
+      setHidden(cfg, String(body.start), Boolean(body.hidden));
+      return send(res, 200, { ok: true });
     }
     if (method === 'POST' && b === 'import') {
       const body = await readJson(req);

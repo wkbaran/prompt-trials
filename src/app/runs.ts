@@ -36,7 +36,7 @@ const PROVIDER = 'file://../../src/provider.ts';
 /** Environment for promptfoo children: local state in .promptfoo, no telemetry or sharing. */
 export const promptfooEnv = (): NodeJS.ProcessEnv => ({
   ...process.env,
-  PROMPTFOO_CONFIG_DIR: '.promptfoo',
+  PROMPTFOO_CONFIG_DIR: process.env.PROMPTFOO_CONFIG_DIR ?? '.promptfoo',
   PROMPTFOO_DISABLE_TELEMETRY: '1',
   PROMPTFOO_DISABLE_UPDATE: '1',
   PROMPTFOO_DISABLE_SHARING: '1',

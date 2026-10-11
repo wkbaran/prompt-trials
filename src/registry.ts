@@ -44,6 +44,13 @@ function interpolate(value: unknown): unknown {
 
 let cached: Registry | undefined;
 
+/** Parses models.yaml text: `${VAR}` is replaced from the environment, and the shape is checked. */
+export function parseRegistry(raw: string, source = 'models.yaml'): Registry {
+  const reg = interpolate(parse(raw)) as Registry;
+  if (!reg?.models) throw new Error(`${source} has no "models" section`);
+  return reg;
+}
+
 export function loadRegistry(path = process.env.PROMPT_TRIALS_MODELS ?? 'models.yaml'): Registry {
   if (cached) return cached;
   const file = resolve(path);
@@ -53,10 +60,8 @@ export function loadRegistry(path = process.env.PROMPT_TRIALS_MODELS ?? 'models.
   } catch {
     throw new Error(`Cannot read ${file}. Copy models.example.yaml to models.yaml and edit it.`);
   }
-  const reg = interpolate(parse(raw)) as Registry;
-  if (!reg.models) throw new Error(`${file} has no "models" section`);
-  cached = reg;
-  return reg;
+  cached = parseRegistry(raw, file);
+  return cached;
 }
 
 export function getModel(id: string): ModelEntry {

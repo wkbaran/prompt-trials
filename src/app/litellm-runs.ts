@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { type Client, type Cluster, clusterRows, TIMESTAMP_KEY_LENGTH, describeRun, fetchFull, isAgentChat, listSpend, recordingFileName, timestampKey, toRecording } from '../litellm.ts';
 import type { AppConfig } from './config.ts';
 
@@ -15,9 +15,31 @@ export interface RecentRun {
   spend: number;
   imported: boolean;
   importedAs?: string;
+  /** Hidden by you; stays hidden until you show it again. */
+  hidden: boolean;
 }
 
 const SAFE = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+
+/** Runs you hid are remembered beside the run history (a data volume in the container), keyed by when the run started. */
+const hiddenFile = (cfg: Pick<AppConfig, 'runsDir'>) => join(dirname(cfg.runsDir), 'hidden-litellm-runs.json');
+
+export function readHidden(cfg: Pick<AppConfig, 'runsDir'>): Set<string> {
+  try {
+    return new Set(JSON.parse(readFileSync(hiddenFile(cfg), 'utf8')) as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+export function setHidden(cfg: Pick<AppConfig, 'runsDir'>, start: string, hidden: boolean): void {
+  const keys = readHidden(cfg);
+  const key = timestampKey(start);
+  if (hidden) keys.add(key);
+  else keys.delete(key);
+  mkdirSync(dirname(hiddenFile(cfg)), { recursive: true });
+  writeFileSync(hiddenFile(cfg), JSON.stringify([...keys].sort(), null, 2));
+}
 
 /** Recording file-name prefixes already on disk, mapped to the folder holding them. */
 export function importedPrefixes(cfg: Pick<AppConfig, 'recordingsDir'>): Map<string, string> {
@@ -50,6 +72,7 @@ export async function recentRuns(cfg: AppConfig, client: Client, days: number, n
   const rows = (await listSpend(client, new Date(now.getTime() - days * 86_400_000), new Date(now.getTime() + 3_600_000))).filter(isAgentChat);
   const clusters = clusterRows(rows);
   const have = importedPrefixes(cfg);
+  const hidden = readHidden(cfg);
   const described: RecentRun[] = [];
   // Labelling reads one stored request per run; eight at a time is quick and still easy on the proxy.
   for (let i = 0; i < clusters.length; i += 8) {
@@ -67,6 +90,7 @@ export async function recentRuns(cfg: AppConfig, client: Client, days: number, n
             promptTokens: c.rows.reduce((a, r) => a + (r.prompt_tokens ?? 0), 0),
             spend: c.rows.reduce((a, r) => a + (r.spend ?? 0), 0),
             imported,
+            hidden: hidden.has(timestampKey(c.start)),
             ...(imported ? { importedAs: folders[0] } : {}),
           };
         }),

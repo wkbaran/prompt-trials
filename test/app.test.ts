@@ -10,7 +10,7 @@ import type { AppConfig } from '../src/app/config.ts';
 import { guardWarnings, isLocalModel, windowWarnings } from '../src/app/guard.ts';
 import { runConfig } from '../src/app/runs.ts';
 import { clusterRows, describeRun, listSpend, makeClient, timestampKey, toRecording } from '../src/litellm.ts';
-import { importedPrefixes, importWindow, recentRuns } from '../src/app/litellm-runs.ts';
+import { importedPrefixes, importWindow, readHidden, recentRuns, setHidden } from '../src/app/litellm-runs.ts';
 import { deleteRecordingDir, listRecordingDirs } from '../src/app/recordings.ts';
 import { createSuite, deleteSuite, getSuite, listSuites, updateSuite } from '../src/app/suites.ts';
 import { basicAuthOk, credentialsFromEnv } from '../src/app/auth.ts';
@@ -263,4 +263,22 @@ test('deleting a recordings folder removes only that folder, and the run can be 
   assert.throws(() => deleteRecordingDir(cfg, '../recordings'), /bad recording directory/);
   assert.throws(() => deleteRecordingDir(cfg, '.'), /bad recording directory/);
   assert.equal(readdirSync(join(root, 'recordings', 'keep-me')).length, 2);
+});
+
+test('hidden runs are remembered, flagged in the list, and can be shown again', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'pt-hide-runs-'));
+  const cfg = { recordingsDir: join(root, 'recordings'), runsDir: join(root, 'output', 'runs') } as AppConfig;
+  const rows = [row('a', '2026-10-11T12:00:00.000+00:00'), row('b', '2026-10-11T12:30:00.000+00:00')];
+  const { client } = fakeProxy(rows);
+  const now = new Date('2026-10-11T13:00:00Z');
+  assert.equal(readHidden(cfg).size, 0); // nothing stored yet
+  const [newer, older] = await recentRuns(cfg, client, 3, now);
+  setHidden(cfg, older!.start, true);
+  assert.deepEqual((await recentRuns(cfg, client, 3, now)).map((r) => r.hidden), [false, true]);
+  assert.deepEqual([...readHidden(cfg)], ['2026-10-11T12-00-00-000']);
+  setHidden(cfg, older!.start, true); // hiding twice keeps one entry
+  assert.equal(readHidden(cfg).size, 1);
+  setHidden(cfg, older!.start, false);
+  assert.deepEqual((await recentRuns(cfg, client, 3, now)).map((r) => r.hidden), [false, false]);
+  assert.ok(newer);
 });

@@ -195,3 +195,7 @@ pre { background: var(--ground); border: 1px solid var(--line); border-radius: v
 
 /* Columns that give way first when the page is narrow, so the action stays in view. */
 @media (max-width: 75rem) { .wide { display: none; } }
+
+/* A secondary action that should not compete with the main one beside it. */
+button.quiet { border-color: transparent; background: none; color: var(--muted); padding: .4rem .55rem; }
+button.quiet:hover { color: var(--ink); border-color: var(--line-strong); }

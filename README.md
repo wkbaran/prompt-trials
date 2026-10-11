@@ -10,7 +10,7 @@
 ![LiteLLM](https://img.shields.io/badge/capture-LiteLLM-informational)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 
-[Concepts](#concepts) · [Try it](#try-it-no-model-no-api-key) · [Real models](#run-against-real-models) · [Capture fixtures](#capture-your-own-fixtures) · [Control app](#control-app) · [Assertions](#assertions) · [Layout](#layout) · [Status](#status-and-ideas)
+[Concepts](#concepts) · [Try it](#try-it-no-model-no-api-key) · [Real models](#run-against-real-models) · [Capture fixtures](#capture-your-own-fixtures) · [Control app](#control-app) · [Configuration](#configuration) · [Assertions](#assertions) · [Tests](#tests) · [Layout](#layout) · [Status](#status-and-ideas)
 
 </div>
 
@@ -47,8 +47,8 @@ already a snapshot at a decision point. No special tracing is needed.
   committed (they hold personal data); the repo ships synthetic examples instead.
 - **Case**: a fixture plus the assertions that decide whether the next step is right (a promptfoo
   "test").
-- **Suite**: a folder under `suites/` with a `promptfooconfig.yaml` and its cases, for one kind of
-  job.
+- **Suite**: a folder with a `promptfooconfig.yaml` and its cases, for one kind of job. The repo ships some under
+  `suites/`; suites you make in the app live in `user-suites/`.
 - **Provider**: what sends the fixture to a model (`src/provider.ts`) and reports tokens, latency
   and cost. `@reference` replays the stored answer with no model at all.
 - **Assertion**: a check on the model's next step, such as which tool it called, with which
@@ -130,12 +130,15 @@ instead.
 
 ## Capture your own fixtures
 
-Point the agent at a LiteLLM proxy (or the bundled recording proxy) for one run, then:
+Route the agent through a [LiteLLM](https://docs.litellm.ai/) proxy (or the bundled recording proxy) for a run, then bring the
+run in as a **recording**: a folder of the requests it sent and the answers it got. The easiest way is the
+[control app](#control-app): its Recordings page lists the proxy's recent runs and imports one with a click. From the
+command line:
 
 ```
 # Option 1: LiteLLM spend logs
 LITELLM_URL=http://host:4000 LITELLM_API_KEY=... \
-  npm run import-litellm -- --since 2026-01-05T06:00:00Z --model my-model --out recordings/job
+  npm run import-litellm -- --since 2026-01-05T06:00:00Z --until 2026-01-05T07:00:00Z --model my-model --out recordings/job
 
 # Option 2: no LiteLLM, record directly
 npm run record -- --upstream http://localhost:11434 --out recordings/job   # then use port 11435
@@ -145,41 +148,44 @@ npm run cut -- pick recordings/job/<file>.json fixtures/job/after-first-batch.js
 ```
 
 LiteLLM needs `store_prompts_in_spend_logs` on and `MAX_STRING_LENGTH_PROMPT_IN_DB` raised
-(the default of 2048 characters truncates long messages). Read `proxy_server_request` and
+(the default of 2048 characters truncates long messages). The importer reads `proxy_server_request` and
 `response` from the spend logs, not the empty `messages` column. A fixture is
 `{ messages, tools, reference }`, where `reference` is the answer the original model gave.
 
-Put cases built from your recordings in `suites/<name>/cases.private.yaml`. It is gitignored,
-like `fixtures/` and `recordings/`, because real conversations contain personal data.
+Cases built from your recordings go in `suites/<name>/cases.private.yaml` (or, in the app, wherever `PRIVATE_CASES_DIR`
+points). Both are gitignored, like `fixtures/` and `recordings/`, because real conversations contain personal data.
 
 ## Control app
 
 ```
-npm run app            # http://127.0.0.1:5180, with promptfoo's viewer on :15500
+npm run app            # http://127.0.0.1:5180, with promptfoo's viewer proxied on :15500
 ```
 
-A small local web app for the parts of the workflow that are tedious on the command line:
+A local web app for the parts of the workflow that are tedious on the command line. It has four areas:
 
 - **New run:** pick a suite, any models from `models.yaml`, repeats and parallelism, and start it. The log streams live and
   the run is kept in `output/runs/`.
 - **Runs:** per-model pass rate, average time, tokens (fresh, cached, output) and cost, then a grid with one square per test
-  and attempt. Select a square to see what the model actually did and why it failed. Every run is also stored in
-  promptfoo, so its own viewer is one click away.
-- **GPU guard:** a run with a local model warns when a configured busy window is active or about to start, or when Ollama
-  has a different model loaded. Copy `trials.config.example.yaml` to `trials.config.yaml` to describe your windows.
-- **Import from LiteLLM:** with `LITELLM_URL` and `LITELLM_API_KEY` set, the Recordings page lists the proxy's recent runs (requests close together in time, labelled with the skill they invoked), marks the ones already imported, and imports one into a recordings folder with a click. The key needs permission to read spend logs.
-- **Recordings and cases:** browse imported conversations, open a step, read the conversation and the answer that was
-  recorded, then build a case from it: choose assertions from a list, try them against the recorded answer, and save.
-  Cases land in the suite's `cases.private.yaml` (the previous version is kept as `.bak`) and fixtures under `fixtures/`.
-  Existing private cases can be edited or deleted; the shipped examples are read-only.
-- **Suites:** make your own suite, or copy a shipped one (its cases come along). A suite has a description and checks
-  that apply to every case; the rest is its cases. Suites you make live in `user-suites/` (`USER_SUITES_DIR`), outside git,
-  so a redeploy keeps them. The suites that ship with the repo stay read-only in the app, which keeps the repo and
-  what the app shows from drifting apart. Deleting a suite moves it to `user-suites/.trash`. Set `SHIPPED_SUITES=hide` to show only your own suites, without the repo's examples; that's the intended setup once you have real recordings.
+  and attempt (failures are striped, so they do not rest on colour alone). Select a square to see what the model actually
+  did and why it failed. Filter the list by suite; the choice is remembered. Every run is also stored in promptfoo, and
+  "Open in the promptfoo viewer" reuses one browser tab.
+- **Recordings:** with `LITELLM_URL` and `LITELLM_API_KEY` set, the page lists the proxy's recent runs (requests close
+  together in time, labelled with the skill they invoked), marks the ones already imported, and imports one into a folder
+  with a click. Runs you do not care about can be hidden (and shown again), and a recordings folder can be deleted; it is
+  copied from the proxy's logs, so it can be imported again. The key needs permission to read spend logs. Open a folder to
+  read a conversation step by step and see the answer that was recorded.
+- **Cases:** build a case from a recorded step: choose checks from a list, try them against the recorded answer, and save.
+  Cases land in the suite's private cases file (the previous version is kept as `.bak`) and the fixture under `fixtures/`.
+  Edit or delete them later. A **suite** is a group of cases with a description and checks that apply to all of them. Make
+  your own, or copy a shipped one (its cases come along). Your suites live in `user-suites/` outside git, so a redeploy
+  keeps them; the suites that ship with the repo stay read-only in the app, so the repo and what the app shows cannot drift
+  apart. Deleting a suite moves it to `user-suites/.trash`.
 
-The app is dark by default, with a Light/Dark button and a palette picker in the left rail (five presets or any three colors of your own). Both choices are remembered per browser.
+A **GPU guard** warns before a run with a local model when a busy window you configured is active or about to start, or
+when Ollama has a different model loaded.
 
-It binds to `127.0.0.1` by default (`HOST`, `PORT` and `VIEWER_PORT` change that).
+The app is dark by default, with a Light/Dark button and a palette picker in the left rail (five presets or any three
+colours of your own). Both choices are remembered per browser. It binds to `127.0.0.1` by default.
 
 ### Running it as a container
 
@@ -188,9 +194,31 @@ It binds to `127.0.0.1` by default (`HOST`, `PORT` and `VIEWER_PORT` change that
 The viewer itself only listens on loopback inside the container; the app proxies it behind the same login. Without those
 variables there is no login, and the app warns when it listens on anything but localhost.
 
-Persistent state lives in bind-mounted folders (recordings, fixtures, private cases, run output, promptfoo's database),
-plus a read-only `models.yaml` and optional `trials.config.yaml`. Private cases are kept as `<PRIVATE_CASES_DIR>/<suite>.yaml`
-instead of inside the suite folder. `GET /healthz` answers without a login, for container health checks.
+Persistent state lives in bind-mounted folders (recordings, fixtures, private cases, your suites, run output, promptfoo's
+database), plus a read-only `models.yaml` and optional `trials.config.yaml`. `GET /healthz` answers without a login, for
+container health checks. Set `LITELLM_URL` and `LITELLM_API_KEY` to enable the import from LiteLLM, and
+`SHIPPED_SUITES=hide` to show only your own suites, without the repo's examples.
+
+## Configuration
+
+Settings come from environment variables, or from `trials.config.yaml` (see `trials.config.example.yaml`); a variable wins.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `HOST`, `PORT` | `127.0.0.1`, `5180` | where the app listens |
+| `VIEWER_PORT` | `15500` | the promptfoo viewer behind the app's login; the viewer itself runs on the next port, loopback only |
+| `VIEWER=off` | on | do not start the viewer |
+| `TRIALS_AUTH_USER`, `TRIALS_AUTH_PASSWORD` | none | require this login (both or neither) |
+| `LITELLM_URL`, `LITELLM_API_KEY` | none | where the Recordings page imports runs from |
+| `OLLAMA_URL` | none | the GPU guard asks this server which model is loaded |
+| `USER_SUITES_DIR` | `user-suites` | suites made in the app |
+| `PRIVATE_CASES_DIR` | beside each suite | where each suite's private cases are kept, as `<dir>/<suite>.yaml` |
+| `SHIPPED_SUITES=hide` | shown | hide the suites that ship with the repo and their examples |
+| `PROMPT_TRIALS_MODELS`, `PROMPT_TRIALS_CONFIG` | `models.yaml`, `trials.config.yaml` | paths to those files |
+| `PROMPTFOO_CONFIG_DIR` | `.promptfoo` | where promptfoo keeps its results database |
+
+In `trials.config.yaml` you can also set the folders (`recordingsDir`, `fixturesDir`, `runsDir`, `suitesDir`) and the GPU
+guard's `busyWindows` and `lookaheadMinutes`.
 
 ## Assertions
 
@@ -208,28 +236,47 @@ Shared checks live in `src/assertions.ts` and are used from a suite's `cases.yam
 An MCP wrapper such as `tool_call` (single or batched calls, with `mcp__server__` name prefixes) is unwrapped automatically. Everything else in promptfoo's
 assertion library (`not-icontains`, `llm-rubric`, …) works too.
 
+## Tests
+
+```
+npm test               # the whole suite runs in a few seconds, with no network and no model
+npm run typecheck      # strict TypeScript
+npm run audit          # no private addresses, paths, keys or emails in the tracked files (add -- --history for every commit)
+```
+
+The tests use Node's built-in runner and fake servers, so nothing leaves your machine. They cover:
+
+- **The checks** (`assertions`, `cost`): every assertion, the `tool_call` wrapper, and the price arithmetic.
+- **The provider and registry**: a fake OpenAI-style server checks the request it receives, the tokens and cost it reports (cache reads and writes billed separately), error handling, and the LiteLLM proxy mode.
+- **The tools**: the recording proxy (plain and streamed answers), `cut`, and the LiteLLM importer's paging, grouping and "already imported" detection.
+- **The app's logic**: suites, cases, run summaries, the GPU guard, login, and the viewer proxy including websocket upgrades.
+- **The whole server**: it boots for real and is driven over HTTP, from login to building a case from a recording to a real promptfoo run and cleanup.
+- **The frontend**: every script parses, `index.html` only refers to files that exist, and every API path the page calls is a route the server has.
+
+Not covered: what the pages look like and how they behave in a browser. That was checked by hand with a real browser; the
+frontend tests only catch the mistakes a build step would.
+
 ## Layout
 
 ```
 src/provider.ts        promptfoo provider: replays a fixture against a model, records tokens/latency/cost
 src/registry.ts        models.yaml loader (${ENV} interpolation)       src/cost.ts   price math
-src/assertions.ts      reusable checks                                  src/cut.ts    recordings → fixtures
+src/assertions.ts      reusable checks                                  src/fixture.ts, src/cut.ts   recordings → fixtures
+src/litellm.ts         reads runs out of a LiteLLM proxy's spend logs   src/import-litellm.ts, src/record-proxy.ts   capture tools
+src/app/               the control app (public/ is its frontend)
 docker/                Dockerfile and an example compose file (your own compose.yaml and .env stay untracked)
-src/app/               control app: run launcher, results, case builder (public/ is its frontend)
-src/import-litellm.ts  LiteLLM spend logs → recordings                  src/record-proxy.ts   pass-through recorder
 suites/<name>/         promptfooconfig.yaml, cases.yaml, examples/ (synthetic fixtures)
 user-suites/<name>/    suites made in the app (untracked)
+test/                  the tests described above
 scripts/audit.ts       refuses to publish private addresses, paths, keys, emails
 ```
 
 ## Status and ideas
 
-Working: provider with per-model pricing, capture from LiteLLM or a proxy, three example suites.
-Working: a control app for launching runs and building cases from recordings.
-Planned: deployment as a container, a relevance-scoring assertion for ranked picks.
+Working: the provider with per-model pricing, capture from LiteLLM or a recording proxy, three example suites, and the
+control app (runs, recordings, cases, suites), which also runs as a container.
+Ideas: a relevance-scoring assertion for ranked picks, and a way to tag runs by job so a proxy can report spend per job.
 
-`npm run audit` (and `-- --history`) scans tracked files and git history for LAN addresses,
-home paths, key-like strings and personal emails. Run it before pushing.
 
 ## License
 
