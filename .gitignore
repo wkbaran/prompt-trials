@@ -8,3 +8,7 @@ output/
 *.log
 recordings/
 suites/*/cases.private.yaml
+
+.run-*.yaml
+trials.config.yaml
+suites/*/cases.private.yaml.bak

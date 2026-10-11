@@ -15,6 +15,8 @@ export interface ModelEntry {
   /** Name of the env var holding the API key; omit for keyless endpoints (Ollama). */
   apiKeyEnv?: string;
   model: string;
+  /** True when the model runs on this machine's GPU (Ollama): the app warns before runs that would clash with other GPU users. Guessed from a localhost URL when omitted. */
+  gpu?: boolean;
   price: Price;
   /** Extra chat-completions body fields (temperature, max_tokens, reasoning_effort, ...). */
   params?: Record<string, unknown>;

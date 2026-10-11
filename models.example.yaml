@@ -12,6 +12,7 @@ models:
   qwen3.8-local:
     apiBaseUrl: ${OLLAMA_URL}/v1
     model: qwen3.8-27b-ctx96k
+    gpu: true              # runs on the GPU; the app warns about busy windows and loaded models
     price: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
     params: { temperature: 0.6 }
 

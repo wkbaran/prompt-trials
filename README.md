@@ -10,7 +10,7 @@
 ![LiteLLM](https://img.shields.io/badge/capture-LiteLLM-informational)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 
-[Concepts](#concepts) · [Try it](#try-it-no-model-no-api-key) · [Real models](#run-against-real-models) · [Capture fixtures](#capture-your-own-fixtures) · [Assertions](#assertions) · [Layout](#layout) · [Status](#status-and-ideas)
+[Concepts](#concepts) · [Try it](#try-it-no-model-no-api-key) · [Real models](#run-against-real-models) · [Capture fixtures](#capture-your-own-fixtures) · [Control app](#control-app) · [Assertions](#assertions) · [Layout](#layout) · [Status](#status-and-ideas)
 
 </div>
 
@@ -152,6 +152,29 @@ LiteLLM needs `store_prompts_in_spend_logs` on and `MAX_STRING_LENGTH_PROMPT_IN_
 Put cases built from your recordings in `suites/<name>/cases.private.yaml`. It is gitignored,
 like `fixtures/` and `recordings/`, because real conversations contain personal data.
 
+## Control app
+
+```
+npm run app            # http://127.0.0.1:5180, with promptfoo's viewer on :15500
+```
+
+A small local web app for the parts of the workflow that are tedious on the command line:
+
+- **New run:** pick a suite, any models from `models.yaml`, repeats and parallelism, and start it. The log streams live and
+  the run is kept in `output/runs/`.
+- **Runs:** per-model pass rate, average time, tokens (fresh, cached, output) and cost, then a grid with one square per test
+  and attempt. Select a square to see what the model actually did and why it failed. Every run is also stored in
+  promptfoo, so its own viewer is one click away.
+- **GPU guard:** a run with a local model warns when a configured busy window is active or about to start, or when Ollama
+  has a different model loaded. Copy `trials.config.example.yaml` to `trials.config.yaml` to describe your windows.
+- **Recordings and cases:** browse imported conversations, open a step, read the conversation and the answer that was
+  recorded, then build a case from it: choose assertions from a list, try them against the recorded answer, and save.
+  Cases land in the suite's `cases.private.yaml` (the previous version is kept as `.bak`) and fixtures under `fixtures/`.
+  Existing private cases can be edited or deleted; the shipped examples are read-only.
+
+It binds to `127.0.0.1` by default. It has no login, so put it behind something that has one before exposing it (`HOST`,
+`PORT` and `VIEWER_PORT` change the binding).
+
 ## Assertions
 
 Shared checks live in `src/assertions.ts` and are used from a suite's `cases.yaml`:
@@ -174,6 +197,7 @@ assertion library (`not-icontains`, `llm-rubric`, …) works too.
 src/provider.ts        promptfoo provider: replays a fixture against a model, records tokens/latency/cost
 src/registry.ts        models.yaml loader (${ENV} interpolation)       src/cost.ts   price math
 src/assertions.ts      reusable checks                                  src/cut.ts    recordings → fixtures
+src/app/               control app: run launcher, results, case builder (public/ is its frontend)
 src/import-litellm.ts  LiteLLM spend logs → recordings                  src/record-proxy.ts   pass-through recorder
 suites/<name>/         promptfooconfig.yaml, cases.yaml, examples/ (synthetic fixtures)
 scripts/audit.ts       refuses to publish private addresses, paths, keys, emails
@@ -182,8 +206,8 @@ scripts/audit.ts       refuses to publish private addresses, paths, keys, emails
 ## Status and ideas
 
 Working: provider with per-model pricing, capture from LiteLLM or a proxy, three example suites.
-Planned: a small control app for running suites and building cases from recordings, deployment
-as a container, a relevance-scoring assertion for ranked picks.
+Working: a control app for launching runs and building cases from recordings.
+Planned: deployment as a container, a relevance-scoring assertion for ranked picks.
 
 `npm run audit` (and `-- --history`) scans tracked files and git history for LAN addresses,
 home paths, key-like strings and personal emails. Run it before pushing.

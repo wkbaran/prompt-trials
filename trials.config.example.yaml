@@ -1,0 +1,11 @@
+# Copy to trials.config.yaml (gitignored). Everything is optional.
+port: 5180
+viewerPort: 15500
+ollamaUrl: http://localhost:11434
+
+# Times when the GPU is shared with something else. A run with a local model warns when it would
+# start inside one of these, or within `lookaheadMinutes` of one. Times are local; days: 0 = Sunday.
+lookaheadMinutes: 30
+busyWindows:
+  - { label: nightly agent, from: "06:00", to: "06:45" }
+  - { label: weekly job, days: [2, 5], from: "09:00", to: "12:30" }

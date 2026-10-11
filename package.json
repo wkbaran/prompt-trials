@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "import-litellm": "node src/import-litellm.ts",
     "audit": "node scripts/audit.ts",
-    "check": "npm run -s eval -- suites/medium-digest/promptfooconfig.yaml && npm run -s eval -- suites/substack-digest/promptfooconfig.yaml && npm run -s eval -- suites/spotify-lane/promptfooconfig.yaml"
+    "check": "npm run -s eval -- suites/medium-digest/promptfooconfig.yaml && npm run -s eval -- suites/substack-digest/promptfooconfig.yaml && npm run -s eval -- suites/spotify-lane/promptfooconfig.yaml",
+    "app": "node --env-file-if-exists=.env src/app/server.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

@@ -1,0 +1,205 @@
+/**
+ * The control app: launch runs, browse results, turn recordings into cases.
+ *   npm run app        then open http://127.0.0.1:5180
+ */
+import { type ChildProcess, spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { extname, join, normalize } from 'node:path';
+import { loadRegistry } from '../registry.ts';
+import { buildAssertion, CATALOG, type Values } from './catalog.ts';
+import { checkAssertions, deleteCase, listCases, requireSuite, saveCase, suiteNames } from './cases.ts';
+import { loadAppConfig } from './config.ts';
+import { guardWarnings, isLocalModel } from './guard.ts';
+import { conversations, cutFixture, listRecordingDirs, stepDetail } from './recordings.ts';
+import { promptfooEnv, RunManager } from './runs.ts';
+
+const cfg = loadAppConfig();
+const runs = new RunManager(cfg);
+const PUBLIC = join(import.meta.dirname, 'public');
+const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
+
+class HttpError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function send(res: ServerResponse, status: number, body: unknown) {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(JSON.stringify(body));
+}
+
+async function readJson(req: IncomingMessage): Promise<any> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const c of req) {
+    size += (c as Buffer).length;
+    if (size > 2_000_000) throw new HttpError(413, 'request too large');
+    chunks.push(c as Buffer);
+  }
+  try {
+    return chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
+  } catch {
+    throw new HttpError(400, 'the request body is not valid JSON');
+  }
+}
+
+function registryOrEmpty() {
+  try {
+    return { models: loadRegistry().models, error: undefined as string | undefined };
+  } catch (e) {
+    return { models: {}, error: (e as Error).message };
+  }
+}
+
+// ---- viewer (promptfoo's own result browser), kept running beside the app
+let viewer: ChildProcess | undefined;
+let viewerUp = false;
+function startViewer() {
+  viewer = spawn(join('node_modules', '.bin', 'promptfoo'), ['view', '-p', String(cfg.viewerPort), '-n'], { env: promptfooEnv(), stdio: 'ignore' });
+  viewer.on('exit', () => {
+    viewerUp = false;
+    viewer = undefined;
+  });
+}
+async function probeViewer() {
+  try {
+    viewerUp = (await fetch(`http://127.0.0.1:${cfg.viewerPort}/`, { signal: AbortSignal.timeout(1000) })).ok;
+  } catch {
+    viewerUp = false;
+  }
+}
+
+async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
+  const parts = url.pathname.split('/').filter(Boolean).slice(1).map(decodeURIComponent);
+  const [a, b, c] = parts;
+  const method = req.method ?? 'GET';
+
+  if (a === 'config' && method === 'GET') return send(res, 200, { busyWindows: cfg.busyWindows, viewerPort: cfg.viewerPort, ollama: Boolean(cfg.ollamaUrl) });
+
+  if (a === 'models' && method === 'GET') {
+    const { models, error } = registryOrEmpty();
+    const list = [
+      { id: '@reference', label: 'Recorded answer', detail: 'replays the stored answer, no model', gpu: false },
+      ...Object.entries(models).map(([id, m]) => ({
+        id,
+        label: id,
+        detail: `${m.model} · $${m.price.input}/$${m.price.output} per Mtok`,
+        gpu: isLocalModel(m, cfg.ollamaUrl),
+      })),
+    ];
+    return send(res, 200, { models: list, error });
+  }
+
+  if (a === 'guard' && method === 'GET') {
+    const chosen = (url.searchParams.get('models') ?? '').split(',').filter(Boolean);
+    return send(res, 200, { warnings: await guardWarnings(registryOrEmpty().models, chosen, cfg) });
+  }
+
+  if (a === 'catalog' && method === 'GET') return send(res, 200, { assertions: CATALOG });
+
+  if (a === 'suites' && method === 'GET') {
+    return send(res, 200, { suites: suiteNames(cfg).map((name) => ({ name, cases: listCases(cfg, name).length })) });
+  }
+
+  if (a === 'cases') {
+    if (method === 'GET' && b) return send(res, 200, { cases: listCases(cfg, b) });
+    if (method === 'POST' && !b) {
+      const body = await readJson(req);
+      const assertions = (body.assertions as { id: string; values: Values }[]).map((x) => buildAssertion(x.id, x.values ?? {}));
+      requireSuite(cfg, body.suite);
+      let fixture: string = body.fixture;
+      if (body.recording) fixture = cutFixture(cfg, body.recording.dir, body.recording.file, body.suite, body.fixtureName);
+      if (body.check) return send(res, 200, { fixture, results: checkAssertions(fixture, assertions) });
+      saveCase(cfg, body.suite, { description: body.description, fixture, assertions }, body.index);
+      return send(res, 200, { ok: true, fixture });
+    }
+    if (method === 'DELETE' && b && c) {
+      deleteCase(cfg, b, Number(c));
+      return send(res, 200, { ok: true });
+    }
+  }
+
+  if (a === 'recordings') {
+    if (method === 'GET' && !b) return send(res, 200, { dirs: listRecordingDirs(cfg) });
+    if (method === 'GET' && b && !c) return send(res, 200, { conversations: conversations(cfg, b) });
+    if (method === 'GET' && b && c) return send(res, 200, stepDetail(cfg, b, c));
+  }
+
+  if (a === 'runs') {
+    if (method === 'GET' && !b) return send(res, 200, { runs: runs.list() });
+    if (method === 'POST' && !b) {
+      const body = await readJson(req);
+      const warnings = await guardWarnings(registryOrEmpty().models, body.models ?? [], cfg);
+      if (warnings.length && !body.force) throw new HttpError(409, JSON.stringify(warnings));
+      return send(res, 200, runs.start(body));
+    }
+    if (method === 'GET' && b && !c) {
+      const run = runs.get(b);
+      if (!run) throw new HttpError(404, 'no such run');
+      return send(res, 200, { run, summary: runs.summary(b), log: run.status === 'running' ? undefined : runs.log(b) });
+    }
+    if (method === 'POST' && b && c === 'cancel') return send(res, 200, { cancelled: runs.cancel(b) });
+    if (method === 'GET' && b && c === 'log') {
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
+      const write = (line: string, done: boolean) => {
+        if (line) res.write(`data: ${JSON.stringify(line)}\n\n`);
+        if (done) {
+          res.write('event: done\ndata: {}\n\n');
+          res.end();
+        }
+      };
+      write(runs.log(b), runs.get(b)?.status !== 'running');
+      if (runs.get(b)?.status === 'running') {
+        const off = runs.subscribe(b, write);
+        req.on('close', off);
+      }
+      return;
+    }
+  }
+
+  if (a === 'viewer' && method === 'GET') {
+    await probeViewer();
+    return send(res, 200, { up: viewerUp, port: cfg.viewerPort });
+  }
+
+  throw new HttpError(404, 'not found');
+}
+
+function serveStatic(res: ServerResponse, pathname: string) {
+  const rel = normalize(pathname === '/' ? '/index.html' : pathname).replace(/^(\.\.[/\\])+/, '');
+  try {
+    const body = readFileSync(join(PUBLIC, rel));
+    res.writeHead(200, { 'content-type': TYPES[extname(rel)] ?? 'application/octet-stream', 'cache-control': 'no-store' });
+    res.end(body);
+  } catch {
+    res.writeHead(404).end('not found');
+  }
+}
+
+const server = createServer(async (req, res) => {
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  try {
+    if (url.pathname.startsWith('/api/')) await api(req, res, url);
+    else serveStatic(res, url.pathname);
+  } catch (e) {
+    const status = e instanceof HttpError ? e.status : 400;
+    if (!res.headersSent) send(res, status, { error: (e as Error).message });
+    else res.end();
+  }
+});
+
+server.listen(cfg.port, cfg.host, () => {
+  console.log(`prompt-trials app: http://${cfg.host}:${cfg.port}  (results viewer on :${cfg.viewerPort})`);
+});
+startViewer();
+const stop = () => {
+  runs.stopAll();
+  viewer?.kill('SIGTERM');
+  process.exit(0);
+};
+process.on('SIGINT', stop);
+process.on('SIGTERM', stop);
