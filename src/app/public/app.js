@@ -476,7 +476,8 @@ async function viewCases(suiteName) {
           ? [h('button', { type: 'button', class: 'fit', onclick: () => (location.hash = `#/suites/${current}/edit`) }, 'Suite settings'),
              h('button', { type: 'button', class: 'fit danger', onclick: async () => { if (confirm(`Delete the suite “${current}”? Its cases move to a trash folder; fixtures stay.`)) { await api(`suites/${encodeURIComponent(current)}`, { method: 'DELETE' }); location.hash = '#/cases'; } } }, 'Delete suite')]
           : h('button', { type: 'button', class: 'fit', onclick: () => (location.hash = `#/suites/new/${current}`) }, 'Copy as new suite'))),
-    meta.description && h('p', { class: 'muted' }, meta.description, mine ? '' : ' This suite ships with the repo, so it is read-only here.'),
+    meta.description && h('p', { class: 'muted', style: 'margin-bottom:.2rem' }, meta.description),
+    mine ? null : h('p', { class: 'muted small' }, 'This suite’s settings ship with the repo and can’t be changed here. You can still add cases to it and edit the ones you add.'),
     cases.length ? h('div', { class: 'scroll' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Case'), h('th', {}, 'Checks'), h('th', {}, ''))),
       h('tbody', {}, cases.map((c) => h('tr', {},
         h('td', {}, c.description, h('div', { class: 'muted small mono' }, `${c.file} → ${c.fixture}`)),
@@ -485,7 +486,7 @@ async function viewCases(suiteName) {
           h('button', { class: 'fit', onclick: () => editCase(c, suites.map((s) => s.name), current) }, 'Edit'),
           h('button', { class: 'fit danger', onclick: async () => { if (confirm(`Delete “${c.description}”? The fixture file stays.`)) { await api(`cases/${current}/${c.index}`, { method: 'DELETE' }); route(); } } }, 'Delete')) : h('span', { class: 'muted small' }, 'example')))))))
       : h('p', { class: 'muted' }, 'This suite has no cases yet.'),
-    h('p', { class: 'muted small' }, 'Create a case from a ', h('a', { href: '#/recordings' }, 'recording'), '. Cases in cases.yaml are shipped examples and are read-only here.'));
+    h('p', { class: 'muted small' }, 'Create a case from a ', h('a', { href: '#/recordings' }, 'recording'), '. Cases marked “example” come with the repo and can’t be changed here.'));
 }
 
 async function editCase(c, suites, suite) {
