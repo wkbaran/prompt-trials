@@ -9,6 +9,7 @@ import { checkAssertions, deleteCase, listCases, saveCase } from '../src/app/cas
 import type { AppConfig } from '../src/app/config.ts';
 import { guardWarnings, isLocalModel, windowWarnings } from '../src/app/guard.ts';
 import { runConfig } from '../src/app/runs.ts';
+import { basicAuthOk, credentialsFromEnv } from '../src/app/auth.ts';
 import { summarize } from '../src/app/summarize.ts';
 
 const at = (day: number, hhmm: string) => new Date(2026, 9, 11 + day, Number(hhmm.slice(0, 2)), Number(hhmm.slice(3)));
@@ -102,4 +103,37 @@ test('cases: save, edit, delete, backup, and the recorded-answer check', () => {
   assert.throws(() => deleteCase(cfg, 's1', 5), /no longer exists/);
   assert.throws(() => saveCase(cfg, '../x', { description: 'a', fixture: 'f', assertions: [calls] }), /unknown suite/);
   assert.throws(() => saveCase(cfg, 's1', { description: 'a', fixture: 'f', assertions: [] }), /at least one/);
+});
+
+test('runConfig appends private case files to the suite tests', () => {
+  const one = runConfig('tests: file://cases*.yaml\n', ['m'], ['file:///data/s.yaml']);
+  assert.match(one, /- file:\/\/cases\*\.yaml\n\s*- file:\/\/\/data\/s\.yaml/);
+  assert.match(runConfig('description: x\n', ['m'], ['file:///data/s.yaml']), /tests:\n\s*- file:\/\/\/data\/s\.yaml/);
+  assert.doesNotMatch(runConfig('tests: file://cases*.yaml\n', ['m']), /- file/);
+});
+
+test('basic auth: env parsing and header check', () => {
+  assert.equal(credentialsFromEnv({}), undefined);
+  assert.throws(() => credentialsFromEnv({ TRIALS_AUTH_USER: 'bill' }), /both/);
+  const creds = credentialsFromEnv({ TRIALS_AUTH_USER: 'bill', TRIALS_AUTH_PASSWORD: 'p:ass' })!;
+  const hdr = (s: string) => `Basic ${Buffer.from(s).toString('base64')}`;
+  assert.equal(basicAuthOk(hdr('bill:p:ass'), creds), true); // a colon in the password is fine
+  assert.equal(basicAuthOk(hdr('bill:wrong'), creds), false);
+  assert.equal(basicAuthOk(hdr('bob:p:ass'), creds), false);
+  assert.equal(basicAuthOk(hdr('nocolon'), creds), false);
+  assert.equal(basicAuthOk(undefined, creds), false);
+  assert.equal(basicAuthOk('Bearer abc', creds), false);
+});
+
+test('private cases can live outside the suite directory', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pt-priv-'));
+  mkdirSync(join(root, 'suites', 's1'), { recursive: true });
+  writeFileSync(join(root, 'suites', 's1', 'promptfooconfig.yaml'), 'description: x\n');
+  writeFileSync(join(root, 'suites', 's1', 'cases.yaml'), '- description: shipped\n  vars: { fixture: a.json }\n  assert: []\n');
+  const cfg = { suitesDir: join(root, 'suites'), privateCasesDir: join(root, 'data', 'cases') } as AppConfig;
+  const calls = buildAssertion('callsTool', { names: ['x'] });
+  saveCase(cfg, 's1', { description: 'mine', fixture: 'f.json', assertions: [calls] });
+  const cases = listCases(cfg, 's1');
+  assert.deepEqual(cases.map((c) => [c.description, c.editable]), [['shipped', false], ['mine', true]]);
+  assert.match(readFileSync(join(root, 'data', 'cases', 's1.yaml'), 'utf8'), /mine/);
 });

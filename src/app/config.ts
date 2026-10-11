@@ -21,6 +21,8 @@ export interface AppConfig {
   recordingsDir: string;
   fixturesDir: string;
   runsDir: string;
+  /** Where each suite's private cases live (`<dir>/<suite>.yaml`). Unset: `cases.private.yaml` beside the suite's config. */
+  privateCasesDir?: string;
   /** Base URL of the Ollama server, for the "what is loaded" check. */
   ollamaUrl?: string;
   busyWindows: BusyWindow[];
@@ -39,6 +41,7 @@ export function loadAppConfig(path = process.env.PROMPT_TRIALS_CONFIG ?? 'trials
     recordingsDir: user.recordingsDir ?? 'recordings',
     fixturesDir: user.fixturesDir ?? 'fixtures',
     runsDir: user.runsDir ?? 'output/runs',
+    privateCasesDir: process.env.PRIVATE_CASES_DIR ?? user.privateCasesDir,
     ollamaUrl: process.env.OLLAMA_URL ?? user.ollamaUrl,
     busyWindows: user.busyWindows ?? [],
     lookaheadMinutes: user.lookaheadMinutes ?? 30,

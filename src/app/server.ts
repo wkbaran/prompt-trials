@@ -6,16 +6,22 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, normalize } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { loadRegistry } from '../registry.ts';
+import { basicAuthOk, CHALLENGE, credentialsFromEnv } from './auth.ts';
 import { buildAssertion, CATALOG, type Values } from './catalog.ts';
 import { checkAssertions, deleteCase, listCases, requireSuite, saveCase, suiteNames } from './cases.ts';
 import { loadAppConfig } from './config.ts';
 import { guardWarnings, isLocalModel } from './guard.ts';
+import { viewerProxy } from './proxy.ts';
 import { conversations, cutFixture, listRecordingDirs, stepDetail } from './recordings.ts';
 import { promptfooEnv, RunManager } from './runs.ts';
 
 const cfg = loadAppConfig();
+const creds = credentialsFromEnv();
 const runs = new RunManager(cfg);
+/** promptfoo's viewer runs on this loopback-only port; the public viewer port is the app's own proxy in front of it. */
+const viewerInternalPort = cfg.viewerPort + 1;
 const PUBLIC = join(import.meta.dirname, 'public');
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
 
@@ -59,7 +65,9 @@ function registryOrEmpty() {
 let viewer: ChildProcess | undefined;
 let viewerUp = false;
 function startViewer() {
-  viewer = spawn(join('node_modules', '.bin', 'promptfoo'), ['view', '-p', String(cfg.viewerPort), '-n'], { env: promptfooEnv(), stdio: 'ignore' });
+  const loopback = pathToFileURL(join(import.meta.dirname, 'bind-loopback.mjs')).href;
+  const env = { ...promptfooEnv(), NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${loopback}`.trim() };
+  viewer = spawn(join('node_modules', '.bin', 'promptfoo'), ['view', '-p', String(viewerInternalPort), '-n'], { env, stdio: 'ignore' });
   viewer.on('exit', () => {
     viewerUp = false;
     viewer = undefined;
@@ -67,7 +75,7 @@ function startViewer() {
 }
 async function probeViewer() {
   try {
-    viewerUp = (await fetch(`http://127.0.0.1:${cfg.viewerPort}/`, { signal: AbortSignal.timeout(1000) })).ok;
+    viewerUp = (await fetch(`http://127.0.0.1:${viewerInternalPort}/`, { signal: AbortSignal.timeout(1000) })).ok;
   } catch {
     viewerUp = false;
   }
@@ -78,7 +86,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
   const [a, b, c] = parts;
   const method = req.method ?? 'GET';
 
-  if (a === 'config' && method === 'GET') return send(res, 200, { busyWindows: cfg.busyWindows, viewerPort: cfg.viewerPort, ollama: Boolean(cfg.ollamaUrl) });
+  if (a === 'config' && method === 'GET') return send(res, 200, { busyWindows: cfg.busyWindows, viewerPort: cfg.viewerPort, ollama: Boolean(cfg.ollamaUrl), auth: Boolean(creds) });
 
   if (a === 'models' && method === 'GET') {
     const { models, error } = registryOrEmpty();
@@ -182,6 +190,12 @@ function serveStatic(res: ServerResponse, pathname: string) {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
+  if (url.pathname === '/healthz') return void res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
+  if (creds && !basicAuthOk(req.headers.authorization, creds)) {
+    // A short pause makes password guessing slow without needing any state.
+    await new Promise((r) => setTimeout(r, 400));
+    return void res.writeHead(401, CHALLENGE).end('login required');
+  }
   try {
     if (url.pathname.startsWith('/api/')) await api(req, res, url);
     else serveStatic(res, url.pathname);
@@ -193,12 +207,17 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(cfg.port, cfg.host, () => {
-  console.log(`prompt-trials app: http://${cfg.host}:${cfg.port}  (results viewer on :${cfg.viewerPort})`);
+  console.log(`prompt-trials app: http://${cfg.host}:${cfg.port}  (results viewer on :${cfg.viewerPort}, login ${creds ? 'required' : 'off'})`);
+  if (!creds && !['127.0.0.1', '::1', 'localhost'].includes(cfg.host)) {
+    console.warn(`WARNING: listening on ${cfg.host} without a login. Set TRIALS_AUTH_USER and TRIALS_AUTH_PASSWORD.`);
+  }
 });
+const proxy = viewerProxy(cfg.host, cfg.viewerPort, viewerInternalPort, creds);
 startViewer();
 const stop = () => {
   runs.stopAll();
   viewer?.kill('SIGTERM');
+  proxy.close();
   process.exit(0);
 };
 process.on('SIGINT', stop);

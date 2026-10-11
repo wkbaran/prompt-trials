@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { isMap, isSeq, parse, parseDocument, YAMLSeq } from 'yaml';
 import * as A from '../assertions.ts';
 import { outputFromReference } from '../fixture.ts';
@@ -34,11 +34,20 @@ export function requireSuite(cfg: AppConfig, suite: string): string {
   return join(cfg.suitesDir, suite);
 }
 
+/** The file holding a suite's private cases. */
+export function privateFile(cfg: Pick<AppConfig, 'suitesDir' | 'privateCasesDir'>, suite: string): string {
+  return cfg.privateCasesDir ? join(cfg.privateCasesDir, `${suite}.yaml`) : join(cfg.suitesDir, suite, PRIVATE_FILE);
+}
+
 export function listCases(cfg: AppConfig, suite: string): CaseInfo[] {
   const dir = requireSuite(cfg, suite);
   const out: CaseInfo[] = [];
-  for (const file of readdirSync(dir).filter((f) => /^cases.*\.ya?ml$/.test(f)).sort()) {
-    const list = parse(readFileSync(join(dir, file), 'utf8')) as any[] | null;
+  const priv = privateFile(cfg, suite);
+  const files = readdirSync(dir).filter((f) => /^cases.*\.ya?ml$/.test(f)).sort().map((f) => join(dir, f));
+  if (cfg.privateCasesDir && existsSync(priv)) files.push(priv);
+  for (const path of files) {
+    const file = cfg.privateCasesDir && path === priv ? `${suite}.yaml (private)` : path.slice(dir.length + 1);
+    const list = parse(readFileSync(path, 'utf8')) as any[] | null;
     (list ?? []).forEach((c, index) => {
       out.push({
         suite,
@@ -47,7 +56,7 @@ export function listCases(cfg: AppConfig, suite: string): CaseInfo[] {
         description: c.description ?? '(no description)',
         fixture: c.vars?.fixture ?? '',
         assertions: (c.assert ?? []).map((raw: Assertion) => ({ raw, ...parseAssertion(raw) })),
-        editable: file === PRIVATE_FILE,
+        editable: path === priv,
       });
     });
   }
@@ -61,7 +70,9 @@ export interface CaseInput {
 }
 
 function loadPrivate(cfg: AppConfig, suite: string) {
-  const path = join(requireSuite(cfg, suite), PRIVATE_FILE);
+  requireSuite(cfg, suite);
+  const path = privateFile(cfg, suite);
+  mkdirSync(dirname(path), { recursive: true });
   const doc = existsSync(path) ? parseDocument(readFileSync(path, 'utf8')) : parseDocument(`${HEADER}[]\n`);
   if (!isSeq(doc.contents)) doc.contents = new YAMLSeq() as any;
   const seq = doc.contents as YAMLSeq;

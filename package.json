@@ -21,10 +21,10 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
-    "promptfoo": "^0.124.1",
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "promptfoo": "^0.124.1",
     "yaml": "^2.9.1"
   },
   "license": "MIT"

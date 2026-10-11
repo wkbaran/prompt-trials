@@ -1,10 +1,10 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { loadRegistry } from '../registry.ts';
-import { requireSuite } from './cases.ts';
+import { privateFile, requireSuite } from './cases.ts';
 import type { AppConfig } from './config.ts';
 import { type ModelTotals, summarize } from './summarize.ts';
 
@@ -44,8 +44,9 @@ export const promptfooEnv = (): NodeJS.ProcessEnv => ({
 });
 
 /** The suite's config with its providers replaced by the chosen models. */
-export function runConfig(suiteConfigYaml: string, models: string[]): string {
+export function runConfig(suiteConfigYaml: string, models: string[], extraTests: string[] = []): string {
   const cfg = parse(suiteConfigYaml) as Record<string, unknown>;
+  if (extraTests.length) cfg.tests = [...(Array.isArray(cfg.tests) ? cfg.tests : cfg.tests ? [cfg.tests] : []), ...extraTests];
   cfg.providers = models.map((m) => ({ id: PROVIDER, label: m, config: { model: m } }));
   return stringify(cfg, { lineWidth: 0 });
 }
@@ -126,7 +127,10 @@ export class RunManager {
 
     // The generated config sits beside the suite's own so its relative file:// paths still resolve.
     const cfgPath = join(suiteDir, `.run-${id}.yaml`);
-    writeFileSync(cfgPath, runConfig(readFileSync(join(suiteDir, 'promptfooconfig.yaml'), 'utf8'), req.models));
+    // Private cases kept outside the suite directory are added to the suite's own tests.
+    const priv = privateFile(this.cfg, req.suite);
+    const extra = this.cfg.privateCasesDir && existsSync(priv) ? [`file://${resolve(priv)}`] : [];
+    writeFileSync(cfgPath, runConfig(readFileSync(join(suiteDir, 'promptfooconfig.yaml'), 'utf8'), req.models, extra));
     const results = join(this.dir(id), 'results.json');
     const args = ['eval', '-c', cfgPath, '--no-cache', '--no-progress-bar', '--repeat', String(repeat), '-j', String(concurrency), '-o', results];
     const child = spawn(join('node_modules', '.bin', 'promptfoo'), args, { env: promptfooEnv(), stdio: ['ignore', 'pipe', 'pipe'] });

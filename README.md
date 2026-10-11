@@ -172,8 +172,18 @@ A small local web app for the parts of the workflow that are tedious on the comm
   Cases land in the suite's `cases.private.yaml` (the previous version is kept as `.bak`) and fixtures under `fixtures/`.
   Existing private cases can be edited or deleted; the shipped examples are read-only.
 
-It binds to `127.0.0.1` by default. It has no login, so put it behind something that has one before exposing it (`HOST`,
-`PORT` and `VIEWER_PORT` change the binding).
+It binds to `127.0.0.1` by default (`HOST`, `PORT` and `VIEWER_PORT` change that).
+
+### Running it as a container
+
+`Dockerfile` and `compose.example.yaml` run the app and promptfoo's viewer together. Set `TRIALS_AUTH_USER` and
+`TRIALS_AUTH_PASSWORD` and both ask for that login (HTTP basic auth, over plain HTTP, so keep it on a network you trust).
+The viewer itself only listens on loopback inside the container; the app proxies it behind the same login. Without those
+variables there is no login, and the app warns when it listens on anything but localhost.
+
+Persistent state lives in bind-mounted folders (recordings, fixtures, private cases, run output, promptfoo's database),
+plus a read-only `models.yaml` and optional `trials.config.yaml`. Private cases are kept as `<PRIVATE_CASES_DIR>/<suite>.yaml`
+instead of inside the suite folder. `GET /healthz` answers without a login, for container health checks.
 
 ## Assertions
 

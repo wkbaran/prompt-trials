@@ -1,0 +1,15 @@
+.git
+node_modules
+.env
+models.yaml
+trials.config.yaml
+recordings
+fixtures
+output
+.promptfoo
+suites/*/cases.private.yaml*
+suites/*/.run-*.yaml
+*.log
+test
+scripts
+README.md

@@ -1,0 +1,29 @@
+# Example deployment. Copy next to a .env that sets the variables below, then:
+#   docker compose up -d --build
+#
+# Needs beside it (paths are relative to the data directory, TRIALS_DATA):
+#   models.yaml           your models (see models.example.yaml); mounted read-only
+#   trials.config.yaml    optional busy windows and the Ollama URL
+# and the folders recordings/, fixtures/, cases/, output/ and promptfoo/ (created on first start).
+services:
+  prompt-trials:
+    build: .
+    container_name: prompt-trials
+    restart: unless-stopped
+    environment:
+      TRIALS_AUTH_USER: ${TRIALS_AUTH_USER:?set TRIALS_AUTH_USER in .env}
+      TRIALS_AUTH_PASSWORD: ${TRIALS_AUTH_PASSWORD:?set TRIALS_AUTH_PASSWORD in .env}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-}
+      OLLAMA_URL: ${OLLAMA_URL:-}
+      TZ: ${TZ:-UTC}
+    ports:
+      - "5180:5180"     # the app
+      - "15500:15500"   # promptfoo's viewer, behind the same login
+    volumes:
+      - ${TRIALS_DATA:-./data}/recordings:/app/recordings
+      - ${TRIALS_DATA:-./data}/fixtures:/app/fixtures
+      - ${TRIALS_DATA:-./data}/cases:/app/cases
+      - ${TRIALS_DATA:-./data}/output:/app/output
+      - ${TRIALS_DATA:-./data}/promptfoo:/app/.promptfoo
+      - ${TRIALS_DATA:-./data}/models.yaml:/app/models.yaml:ro
+      - ${TRIALS_DATA:-./data}/trials.config.yaml:/app/trials.config.yaml:ro
