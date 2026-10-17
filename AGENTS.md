@@ -17,3 +17,9 @@ Things that surprised earlier agents in this project.
   without its bucket and uploads go to `none.s3.none.amazonaws.com`.
 - **Fixture paths in a suite's cases are relative to the repo root**, not to the suite folder, so run
   `npx promptfoo eval -c suites/<name>/promptfooconfig.yaml` from the root.
+- **The S3 log bucket and its two IAM users exist but were not created from `infra/litellm-logs.cloudformation.yaml`.**
+  They were made with the AWS CLI first, and the template has not been imported, so there is no `litellm-logs` stack
+  yet and a plain `aws cloudformation deploy` fails with "already exists". Adopt them with the import steps in the
+  template's header, then deploy once more: the template is slightly stricter than what is live (the writer may only put
+  objects under the log folder, and the 30-day expiry applies only to that folder). Access keys are deliberately not in
+  the stack; the proxy's write key lives in its own deployment's gitignored `.env`, and the read key in `docker/.env`.

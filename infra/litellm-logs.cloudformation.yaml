@@ -1,0 +1,143 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  LiteLLM request logs — a private S3 bucket the proxy writes to (its s3_v2 logger), an IAM user that can only
+  write there, and an IAM user that can only read there (prompt-trials, via S3_LOGS_BUCKET).
+  Access keys are not part of the stack, so they never appear in its state or outputs: create them with the
+  commands in the Outputs.
+
+# Fresh account:
+#   aws cloudformation deploy --stack-name litellm-logs --template-file infra/litellm-logs.cloudformation.yaml \
+#     --capabilities CAPABILITY_NAMED_IAM --parameter-overrides BucketName=<globally unique name>
+#
+# Resources that already exist (the bucket and both users were first created with the CLI) are adopted by an
+# import, not created, so nothing is replaced and the access keys in use keep working. Put the three identifiers
+# in resources.json:
+#   [ {"ResourceType":"AWS::S3::Bucket","LogicalResourceId":"Bucket","ResourceIdentifier":{"BucketName":"<bucket>"}},
+#     {"ResourceType":"AWS::IAM::User","LogicalResourceId":"WriterUser","ResourceIdentifier":{"UserName":"litellm-log-writer"}},
+#     {"ResourceType":"AWS::IAM::User","LogicalResourceId":"ReaderUser","ResourceIdentifier":{"UserName":"prompt-trials-log-reader"}} ]
+# then create and run the change set, and deploy once more to apply any differences from the live settings:
+#   aws cloudformation create-change-set --stack-name litellm-logs --change-set-name adopt --change-set-type IMPORT \
+#     --template-body file://infra/litellm-logs.cloudformation.yaml --resources-to-import file://resources.json \
+#     --capabilities CAPABILITY_NAMED_IAM --parameters ParameterKey=BucketName,ParameterValue=<bucket>
+#   aws cloudformation execute-change-set --stack-name litellm-logs --change-set-name adopt
+
+Parameters:
+
+  BucketName:
+    Type: String
+    Description: S3 bucket name (must be globally unique)
+
+  LogPrefix:
+    Type: String
+    Default: proxy
+    Description: Folder the proxy writes under — its s3_path, and S3_LOGS_PREFIX for prompt-trials
+
+  RetentionDays:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    Description: Days to keep log objects before S3 deletes them
+
+  WriterUserName:
+    Type: String
+    Default: litellm-log-writer
+    Description: IAM user for the LiteLLM proxy (write only)
+
+  ReaderUserName:
+    Type: String
+    Default: prompt-trials-log-reader
+    Description: IAM user for prompt-trials (read only)
+
+Resources:
+
+  # -- S3 bucket (private; the logs hold full prompts and responses) ------------
+
+  Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-logs
+            Status: Enabled
+            Prefix: !Sub '${LogPrefix}/'
+            ExpirationInDays: !Ref RetentionDays
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 2
+      Tags:
+        - Key: purpose
+          Value: litellm-logs
+
+  # -- IAM user for the proxy: can add objects under the log prefix and nothing else ----
+
+  WriterUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref WriterUserName
+      Policies:
+        - PolicyName: write-logs-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: WriteLogsOnly
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub '${Bucket.Arn}/${LogPrefix}/*'
+      Tags:
+        - Key: purpose
+          Value: litellm-logs
+
+  # -- IAM user for prompt-trials: can list and read the log prefix and nothing else ----
+
+  ReaderUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref ReaderUserName
+      Policies:
+        - PolicyName: read-logs-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ListLogs
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt Bucket.Arn
+                Condition:
+                  StringLike:
+                    's3:prefix': [!Ref LogPrefix, !Sub '${LogPrefix}/*']
+              - Sid: ReadLogs
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub '${Bucket.Arn}/${LogPrefix}/*'
+      Tags:
+        - Key: purpose
+          Value: prompt-trials-read-litellm-logs
+
+Outputs:
+
+  BucketName:
+    Description: S3 bucket name (S3_LOGS_BUCKET for prompt-trials, s3_bucket_name in the proxy's config.yaml)
+    Value: !Ref Bucket
+
+  LogPrefix:
+    Description: Folder under the bucket (S3_LOGS_PREFIX, s3_path)
+    Value: !Ref LogPrefix
+
+  WriterUser:
+    Description: IAM user for the proxy — create its access key with aws iam create-access-key
+    Value: !Ref WriterUser
+
+  ReaderUser:
+    Description: IAM user for prompt-trials — create its access key with aws iam create-access-key
+    Value: !Ref ReaderUser

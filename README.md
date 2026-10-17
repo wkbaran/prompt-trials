@@ -180,6 +180,11 @@ Reading needs `s3:ListBucket` on the bucket and `s3:GetObject` on `proxy/*`, wit
 (environment, profile, SSO). `S3_LOGS_ENDPOINT` points at an S3-compatible server such as MinIO. Layouts with team or key
 prefixes, or hourly folders other than `<prefix>/<date>/[<hour>/]`, are not read.
 
+`infra/litellm-logs.cloudformation.yaml` creates the private bucket (encrypted, expiring after 30 days by default), a user
+that can only write to the log folder for the proxy, and a user that can only read it for prompt-trials. Access keys are
+left out of the stack: create them with `aws iam create-access-key`. The template's header also explains how to adopt a
+bucket and users you already made by hand.
+
 Cases built from your recordings go in `suites/<name>/cases.private.yaml` (or, in the app, wherever `PRIVATE_CASES_DIR`
 points). Both are gitignored, like `fixtures/` and `recordings/`, because real conversations contain personal data.
 
