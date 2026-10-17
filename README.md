@@ -226,10 +226,13 @@ Shared checks live in `src/assertions.ts` and are used from a suite's `cases.yam
 
 | Assertion | Catches |
 |---|---|
+| `onlyOfferedTools` | calling a tool the request never offered, such as `terminal` when the system prompt talks about it but the tool list does not include it |
 | `callsTool` / `avoidsTool` | calling `finish` before every batch was read; skipping a required step |
-| `validToolArguments` | malformed tool-call JSON |
+| `validToolArguments` | malformed tool-call JSON, including a `tool_call` wrapper whose `calls` is a string that is not a JSON list |
 | `delegatedRefsPreserved` | a model renumbering, inventing or reordering refs when it delegates |
 | `noTemplateMarkers` | unexpanded placeholders such as `<the ref>` left in a subagent goal |
+| `goalIncludes` | a subagent goal that drops what the subagent cannot look up (the lane id, the covered lists, how to report) |
+| `delimitedLines` | plain text for a tool (one record per line, `a \| b \| c`) with the wrong field count, or JSON, code fences, numbering or banned phrases |
 | `noRepeatedItems` | adding the same track or item twice |
 | `startsWith`, `maxLength` | reply format and length caps |
 

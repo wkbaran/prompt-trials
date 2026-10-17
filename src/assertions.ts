@@ -29,6 +29,16 @@ type Result = { pass: boolean; score: number; reason: string };
 const ok = (reason: string): Result => ({ pass: true, score: 1, reason });
 const bad = (reason: string): Result => ({ pass: false, score: 0, reason });
 
+/** The wrapper's `calls` as a list. It also accepts the list as a JSON string; anything else is not a list. */
+function wrapped(args: any): any {
+  if (typeof args?.calls !== 'string') return args?.calls;
+  try {
+    return JSON.parse(args.calls);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Hermes routes MCP tools through a generic wrapper such as `tool_call`. Unwrap it so assertions see
  * the real tool name. The wrapper takes either one call ({ name, arguments }) or a batch
@@ -41,7 +51,7 @@ export function unwrap(calls: Call[], wrapper = 'tool_call'): Call[] {
     .flatMap((c): Call[] => {
       const a = c.arguments;
       if (c.name !== wrapper || !a || typeof a !== 'object') return [c];
-      const inner: any[] = Array.isArray(a.calls) ? a.calls : [a];
+      const inner: any[] = Array.isArray(wrapped(a)) ? wrapped(a) : [a];
       return inner.map((i) => ({ name: i.name ?? i.tool ?? i.tool_name ?? c.name, arguments: i.arguments ?? i.args ?? i.input ?? {} }));
     })
     .map((c) => ({ ...c, name: typeof c.name === 'string' ? short(c.name) : c.name }));
@@ -56,6 +66,14 @@ export function fixtureMessages(ctx: Ctx): any[] {
   const p = ctx.vars?.fixture;
   if (typeof p !== 'string') return [];
   return JSON.parse(readFileSync(resolve(p), 'utf8')).messages ?? [];
+}
+
+/** Names of the tools the fixture offered the model. */
+export function offeredTools(ctx: Ctx): string[] {
+  const p = ctx.vars?.fixture;
+  if (typeof p !== 'string') return [];
+  const tools: any[] = JSON.parse(readFileSync(resolve(p), 'utf8')).tools ?? [];
+  return tools.map((t) => t.function?.name ?? t.name).filter(Boolean);
 }
 
 /** Tool calls the conversation already made before the snapshot. */
@@ -89,10 +107,17 @@ export function avoidsTool(output: Output, ctx: Ctx): Result {
   return hit.length ? bad(`called forbidden ${hit.map((c) => c.name)}`) : ok('no forbidden tool called');
 }
 
-/** Every tool call's arguments parsed as JSON. */
-export function validToolArguments(output: Output): Result {
-  const broken = (output.tool_calls ?? []).filter((c) => c.arguments && typeof c.arguments === 'object' && '__unparsed' in c.arguments);
-  return broken.length ? bad(`unparseable arguments for ${broken.map((c) => c.name)}`) : ok('all tool arguments are valid JSON');
+/**
+ * Every tool call's arguments parsed as JSON, and the wrapper's `calls` (when it is a string) a JSON list too:
+ * the wrapper answers "calls is not valid JSON" otherwise. config: { wrapper?: "tool_call" }
+ */
+export function validToolArguments(output: Output, ctx?: Ctx): Result {
+  const wrapper = ctx?.config?.wrapper ?? 'tool_call';
+  const calls = output.tool_calls ?? [];
+  const broken = calls.filter((c) => c.arguments && typeof c.arguments === 'object' && '__unparsed' in c.arguments);
+  if (broken.length) return bad(`unparseable arguments for ${broken.map((c) => c.name)}`);
+  const stringy = calls.filter((c) => c.name === wrapper && typeof c.arguments?.calls === 'string' && !Array.isArray(wrapped(c.arguments)));
+  return stringy.length ? bad(`${wrapper} got "calls" as a string that is not a JSON list`) : ok('all tool arguments are valid JSON');
 }
 
 /** config: { name: string, key: string } values of args[key] (array or scalar) must not repeat earlier calls to `name`. */
@@ -165,4 +190,58 @@ export function noTemplateMarkers(output: Output, ctx: Ctx): Result {
     .flatMap((c) => (c.arguments?.tasks ?? [c.arguments]).map((t: any) => `${t?.goal ?? ''}`.match(marker)?.[0]))
     .filter(Boolean);
   return hits.length ? bad(`placeholder left in goal: ${hits[0]}`) : ok('no placeholders in goals');
+}
+
+/**
+ * Goals sent to a subagent must carry what it cannot look up itself (the lane id, the covered lists, how to report).
+ * config: { tool?: "delegate_task", includes: string[] } every goal must contain every string (case-insensitive).
+ */
+export function goalIncludes(output: Output, ctx: Ctx): Result {
+  const tool = ctx.config?.tool ?? 'delegate_task';
+  const wanted: string[] = ctx.config?.includes ?? [];
+  const goals = callsOf(output, ctx)
+    .filter((c) => c.name === tool)
+    .flatMap((c) => (c.arguments?.tasks ?? [c.arguments]).map((t: any) => `${t?.goal ?? ''}`.toLowerCase()));
+  if (!goals.length) return bad(`no ${tool} call to check`);
+  const missing = wanted.filter((w) => goals.some((g) => !g.includes(w.toLowerCase())));
+  return missing.length ? bad(`goal is missing: ${missing.join(', ')}`) : ok('goal carries everything required');
+}
+
+/**
+ * Plain text sent to a tool as one record per line, such as verify_tracks's `text`: `artist | track | release | ...`.
+ * Calls that leave the argument out (e.g. they use a structured alternative) are skipped; if none is left, it fails.
+ * config: { tool: string, arg: string, fields: number, exempt?: string[] (line prefixes that are not records),
+ *           forbid?: string[] (regexes the text must not match) }
+ * Lines must have exactly `fields` pipe-separated fields, and the text must not be JSON, fenced or numbered.
+ */
+export function delimitedLines(output: Output, ctx: Ctx): Result {
+  const { tool, arg, fields, exempt = [], forbid = [] } = ctx.config ?? {};
+  const texts = callsOf(output, ctx)
+    .filter((c) => c.name === tool && typeof c.arguments?.[arg] === 'string')
+    .map((c) => c.arguments[arg] as string);
+  if (!texts.length) return bad(`no ${tool} call with a text ${arg} to check`);
+  for (const t of texts) {
+    if (/^\s*[[{]/.test(t)) return bad(`${arg} is JSON, not plain lines`);
+    if (t.includes('```')) return bad(`${arg} has a code fence`);
+    for (const re of forbid) if (new RegExp(re, 'i').test(t)) return bad(`${arg} matches forbidden /${re}/`);
+    for (const line of t.split('\n').map((l) => l.trim()).filter(Boolean)) {
+      if (/^(?:\d+[.)]|[-*•])\s/.test(line)) return bad(`numbered or bulleted line: ${line.slice(0, 60)}`);
+      if (exempt.some((p: string) => line.startsWith(p))) continue;
+      const n = line.split('|').length;
+      if (n !== fields) return bad(`${n} fields, wanted ${fields}: ${line.slice(0, 80)}`);
+    }
+  }
+  return ok(`every ${tool} ${arg} line has ${fields} fields`);
+}
+
+/**
+ * Only tools the request offered may be called, however the system prompt or an earlier tool result talks about
+ * others (Hermes subagents get a short list but are told to use `terminal` or `read_file`). The wrapper's inner
+ * calls are not checked here; see callsTool and avoidsTool.
+ */
+export function onlyOfferedTools(output: Output, ctx: Ctx): Result {
+  const offered = offeredTools(ctx);
+  if (!offered.length) return bad('the fixture offers no tools to check against');
+  const stray = (output.tool_calls ?? []).map((c) => c.name).filter((n) => !offered.includes(n));
+  return stray.length ? bad(`called ${[...new Set(stray)]}, which was not offered (offered: ${offered})`) : ok('called only offered tools');
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { callsTool, delegatedRefsPreserved, noTemplateMarkers, noRepeatedItems, unwrap, validToolArguments } from '../src/assertions.ts';
+import { callsTool, delegatedRefsPreserved, delimitedLines, goalIncludes, onlyOfferedTools, noTemplateMarkers, noRepeatedItems, unwrap, validToolArguments } from '../src/assertions.ts';
 import { computeCost } from '../src/cost.ts';
 
 const out = (calls: { name: string; arguments: unknown }[], content = '') => ({ content, tool_calls: calls });
@@ -37,6 +37,17 @@ test('callsTool sees wrapped calls', () => {
 test('validToolArguments flags unparsed JSON', () => {
   assert.equal(validToolArguments(out([{ name: 'x', arguments: { __unparsed: '{bad' } }])).pass, false);
   assert.equal(validToolArguments(out([{ name: 'x', arguments: { a: 1 } }])).pass, true);
+});
+
+test('validToolArguments: wrapper calls as a string must be a JSON list', () => {
+  const finish = { name: 'mcp__s__discovery_finish', arguments: { lane: 'a' } };
+  const string = (calls: string, extra = {}) => out([{ name: 'tool_call', arguments: { calls, ...extra } }]);
+  // what a model once sent: a broken string, with the tool name left beside it
+  assert.equal(validToolArguments(string('[{"arguments":{"why":{"K1":"it\'s \\u0026 \"x\" y"}', { name: finish.name })).pass, false);
+  // a string holding a real JSON list is accepted by the wrapper, and unwrap reads through it
+  const listed = string(JSON.stringify([finish]));
+  assert.equal(validToolArguments(listed).pass, true);
+  assert.deepEqual(unwrap(listed.tool_calls).map((c) => c.name), ['discovery_finish']);
 });
 
 test('delegatedRefsPreserved: ok, reordered, unknown', () => {
@@ -91,4 +102,36 @@ test('delegatedRefsPreserved reads refs out of JSON-escaped results', () => {
   const ctx = { ...fixture([{ role: 'tool', content: '{"result": "Work list\\nF25 | 99 | a\\nF1 | 98 | b"}' }]), config: {} };
   const o = out([{ name: 'delegate_task', arguments: { tasks: [{ goal: 'Read F25, F1' }] } }]);
   assert.equal(delegatedRefsPreserved(o, ctx).pass, true);
+});
+
+test('goalIncludes: every goal must carry every string', () => {
+  const delegate = (goal: string) => out([{ name: 'delegate_task', arguments: { tasks: [{ goal }] } }]);
+  const config = { includes: ['Lane id: b-ukg', 'verify_tracks'] };
+  assert.equal(goalIncludes(delegate('Lane id: b-ukg. Hand them over with VERIFY_TRACKS.'), { config }).pass, true);
+  assert.match(goalIncludes(delegate('Lane id: b-ukg. Reply DONE.'), { config }).reason, /verify_tracks/);
+  assert.equal(goalIncludes(out([]), { config }).pass, false);
+});
+
+test('delimitedLines: field count, labels, JSON, fences, numbering, forbidden phrases', () => {
+  const verify = (text: unknown) => out([{ name: 'tool_call', arguments: { calls: [{ name: 'mcp__spotify_discovery__verify_tracks', arguments: { lane: 'a', text } }] } }]);
+  const config = { tool: 'verify_tracks', arg: 'text', fields: 7, exempt: ['LABEL |'], forbid: ['sounds like'] };
+  const row = 'A | T | R | L | 2026-10-01 | Bandcamp: "dark" | https://x.example';
+  assert.equal(delimitedLines(verify(`${row}\nLABEL | L | https://l.example | small label`), { config }).pass, true);
+  assert.match(delimitedLines(verify('A | T | R | L | 2026-10-01 | why'), { config }).reason, /6 fields/);
+  assert.match(delimitedLines(verify(`[{"artist":"A"}]`), { config }).reason, /JSON/);
+  assert.match(delimitedLines(verify('```\n' + row + '\n```'), { config }).reason, /fence/);
+  assert.match(delimitedLines(verify('1. ' + row), { config }).reason, /numbered/);
+  assert.match(delimitedLines(verify(row.replace('dark', 'sounds like Noisia')), { config }).reason, /forbidden/);
+  // nothing to check (e.g. the structured `candidates` alternative was used instead of `text`)
+  assert.equal(delimitedLines(verify(undefined), { config }).pass, false);
+});
+
+test('onlyOfferedTools: names must be in the fixture tools', () => {
+  const p = join(mkdtempSync(join(tmpdir(), 'pt-')), 'f.json');
+  writeFileSync(p, JSON.stringify({ messages: [], tools: [{ type: 'function', function: { name: 'web_search' } }, { type: 'function', function: { name: 'tool_call' } }] }));
+  const ctx = { vars: { fixture: p } };
+  assert.equal(onlyOfferedTools(out([{ name: 'web_search', arguments: {} }, { name: 'tool_call', arguments: {} }]), ctx).pass, true);
+  assert.match(onlyOfferedTools(out([{ name: 'terminal', arguments: {} }]), ctx).reason, /terminal.*not offered/);
+  assert.equal(onlyOfferedTools(out([{ name: 'x', arguments: {} }]), { vars: {} }).pass, false);
+  assert.equal(onlyOfferedTools(out([]), ctx).pass, true); // a text reply calls nothing
 });
