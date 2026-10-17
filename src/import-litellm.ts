@@ -6,6 +6,10 @@
  *     node src/import-litellm.ts --since 2026-10-10T06:00:00Z [--until ...] [--model qwen3.8] \
  *       [--tag medium] [--min-prompt-tokens 0] --out recordings/medium
  *
+ * Or read the proxy's S3 request logs instead (complete; the spend log drops requests when response ids repeat, as
+ * Ollama's do): set S3_LOGS_BUCKET (and S3_LOGS_PREFIX, S3_LOGS_REGION, S3_LOGS_ENDPOINT) in place of the two above.
+ * See src/s3-logs.ts.
+ *
  * Needs on the proxy: `store_prompts_in_spend_logs` on, and MAX_STRING_LENGTH_PROMPT_IN_DB raised
  * (default 2048 truncates long messages). Rows are read from `proxy_server_request` (full request
  * incl. tools) and `response`; the `messages` column is empty in current versions.
@@ -14,6 +18,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { fetchFull, isAgentChat, listSpend, makeClient, recordingFileName, toRecording } from './litellm.ts';
+import { makeS3Client, s3FromEnv } from './s3-logs.ts';
 
 const { values } = parseArgs({
   options: {
@@ -28,12 +33,13 @@ const { values } = parseArgs({
 
 const base = process.env.LITELLM_URL;
 const key = process.env.LITELLM_API_KEY;
-if (!base || !key || !values.since) {
-  console.error('usage: LITELLM_URL=... LITELLM_API_KEY=... import-litellm --since <ISO time> [--until <ISO>] [--model <substr>] [--tag <substr>] [--min-prompt-tokens N] [--out dir]');
+const s3 = s3FromEnv();
+if (!(s3 || (base && key)) || !values.since) {
+  console.error('usage: (LITELLM_URL=... LITELLM_API_KEY=... | S3_LOGS_BUCKET=...) import-litellm --since <ISO time> [--until <ISO>] [--model <substr>] [--tag <substr>] [--min-prompt-tokens N] [--out dir]');
   process.exit(2);
 }
 
-const client = makeClient(base, key);
+const client = s3 ? makeS3Client(s3) : makeClient(base!, key!);
 const minPrompt = Number(values['min-prompt-tokens']);
 const rows = await listSpend(client, new Date(values.since), values.until ? new Date(values.until) : new Date(Date.now() + 3600_000));
 

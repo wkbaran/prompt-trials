@@ -140,7 +140,11 @@ command line:
 LITELLM_URL=http://host:4000 LITELLM_API_KEY=... \
   npm run import-litellm -- --since 2026-01-05T06:00:00Z --until 2026-01-05T07:00:00Z --model my-model --out recordings/job
 
-# Option 2: no LiteLLM, record directly
+# Option 2: the proxy's S3 request logs (complete; see below)
+S3_LOGS_BUCKET=my-llm-logs S3_LOGS_PREFIX=proxy S3_LOGS_REGION=us-west-2 \
+  npm run import-litellm -- --since 2026-01-05T06:00:00Z --until 2026-01-05T07:00:00Z --out recordings/job
+
+# Option 3: no LiteLLM, record directly
 npm run record -- --upstream http://localhost:11434 --out recordings/job   # then use port 11435
 
 npm run cut -- list recordings/job                                   # conversations and steps
@@ -151,6 +155,30 @@ LiteLLM needs `store_prompts_in_spend_logs` on and `MAX_STRING_LENGTH_PROMPT_IN_
 (the default of 2048 characters truncates long messages). The importer reads `proxy_server_request` and
 `response` from the spend logs, not the empty `messages` column. A fixture is
 `{ messages, tools, reference }`, where `reference` is the answer the original model gave.
+
+**Prefer the S3 logs if the proxy fronts Ollama.** LiteLLM's spend log is keyed by the provider's response id, and Ollama's
+(reached through LiteLLM's `openai/` provider) are only `chatcmpl-0` to `chatcmpl-998`. A new request whose id is already in
+the table is dropped without an error, so a growing share of requests goes missing (about half after a week of busy use),
+and so do the steps between the ones that survive. LiteLLM's `s3_v2` logger names each object by start time to the
+microsecond, so nothing collides, and it also keeps failed requests, the cost and the tool definitions. Set it up on the
+proxy (`s3_callback_params` has to come **before** the callbacks, or the logger starts without its bucket):
+
+```yaml
+# config.yaml, mounted into the proxy and started with --config
+litellm_settings:
+  s3_callback_params:
+    s3_bucket_name: my-llm-logs
+    s3_region_name: us-west-2
+    s3_aws_access_key_id: os.environ/S3_LOG_ACCESS_KEY_ID        # a key that may only s3:PutObject here
+    s3_aws_secret_access_key: os.environ/S3_LOG_SECRET_ACCESS_KEY
+    s3_path: proxy
+  success_callback: ["s3_v2"]
+  failure_callback: ["s3_v2"]
+```
+
+Reading needs `s3:ListBucket` on the bucket and `s3:GetObject` on `proxy/*`, with credentials from the usual AWS chain
+(environment, profile, SSO). `S3_LOGS_ENDPOINT` points at an S3-compatible server such as MinIO. Layouts with team or key
+prefixes, or hourly folders other than `<prefix>/<date>/[<hour>/]`, are not read.
 
 Cases built from your recordings go in `suites/<name>/cases.private.yaml` (or, in the app, wherever `PRIVATE_CASES_DIR`
 points). Both are gitignored, like `fixtures/` and `recordings/`, because real conversations contain personal data.
@@ -169,10 +197,10 @@ A local web app for the parts of the workflow that are tedious on the command li
   and attempt (failures are striped, so they do not rest on colour alone). Select a square to see what the model actually
   did and why it failed. Filter the list by suite; the choice is remembered. Every run is also stored in promptfoo, and
   "Open in the promptfoo viewer" reuses one browser tab.
-- **Recordings:** with `LITELLM_URL` and `LITELLM_API_KEY` set, the page lists the proxy's recent runs (requests close
+- **Recordings:** with `S3_LOGS_BUCKET` (or else `LITELLM_URL` and `LITELLM_API_KEY`) set, the page lists the proxy's recent runs (requests close
   together in time, labelled with the skill they invoked), marks the ones already imported, and imports one into a folder
   with a click. Runs you do not care about can be hidden (and shown again), and a recordings folder can be deleted; it is
-  copied from the proxy's logs, so it can be imported again. The key needs permission to read spend logs. Open a folder to
+  copied from the proxy's logs, so it can be imported again. The LiteLLM key needs permission to read spend logs. Open a folder to
   read a conversation step by step and see the answer that was recorded.
 - **Cases:** build a case from a recorded step: choose checks from a list, try them against the recorded answer, and save.
   Cases land in the suite's private cases file (the previous version is kept as `.bak`) and the fixture under `fixtures/`.
@@ -196,7 +224,7 @@ variables there is no login, and the app warns when it listens on anything but l
 
 Persistent state lives in bind-mounted folders (recordings, fixtures, private cases, your suites, run output, promptfoo's
 database), plus a read-only `models.yaml` and optional `trials.config.yaml`. `GET /healthz` answers without a login, for
-container health checks. Set `LITELLM_URL` and `LITELLM_API_KEY` to enable the import from LiteLLM, and
+container health checks. Set `S3_LOGS_BUCKET` (with AWS credentials) or `LITELLM_URL` and `LITELLM_API_KEY` to enable the import from LiteLLM, and
 `SHIPPED_SUITES=hide` to show only your own suites, without the repo's examples.
 
 ## Configuration
@@ -210,6 +238,7 @@ Settings come from environment variables, or from `trials.config.yaml` (see `tri
 | `VIEWER=off` | on | do not start the viewer |
 | `TRIALS_AUTH_USER`, `TRIALS_AUTH_PASSWORD` | none | require this login (both or neither) |
 | `LITELLM_URL`, `LITELLM_API_KEY` | none | where the Recordings page imports runs from |
+| `S3_LOGS_BUCKET`, `S3_LOGS_PREFIX`, `S3_LOGS_REGION`, `S3_LOGS_ENDPOINT` | none | the proxy's S3 request logs, read instead of the spend log when the bucket is set (`s3Logs:` in `trials.config.yaml` works too) |
 | `OLLAMA_URL` | none | the GPU guard asks this server which model is loaded |
 | `USER_SUITES_DIR` | `user-suites` | suites made in the app |
 | `PRIVATE_CASES_DIR` | beside each suite | where each suite's private cases are kept, as `<dir>/<suite>.yaml` |
@@ -252,6 +281,7 @@ The tests use Node's built-in runner and fake servers, so nothing leaves your ma
 - **The checks** (`assertions`, `cost`): every assertion, the `tool_call` wrapper, and the price arithmetic.
 - **The provider and registry**: a fake OpenAI-style server checks the request it receives, the tokens and cost it reports (cache reads and writes billed separately), error handling, and the LiteLLM proxy mode.
 - **The tools**: the recording proxy (plain and streamed answers), `cut`, and the LiteLLM importer's paging, grouping and "already imported" detection.
+  The S3 reader is tested against a fake S3 server: paging, day boundaries, repeated response ids, caching, and the importer on top of it.
 - **The app's logic**: suites, cases, run summaries, the GPU guard, login, and the viewer proxy including websocket upgrades.
 - **The whole server**: it boots for real and is driven over HTTP, from login to building a case from a recording to a real promptfoo run and cleanup.
 - **The frontend**: every script parses, `index.html` only refers to files that exist, and every API path the page calls is a route the server has.
@@ -265,7 +295,8 @@ frontend tests only catch the mistakes a build step would.
 src/provider.ts        promptfoo provider: replays a fixture against a model, records tokens/latency/cost
 src/registry.ts        models.yaml loader (${ENV} interpolation)       src/cost.ts   price math
 src/assertions.ts      reusable checks                                  src/fixture.ts, src/cut.ts   recordings → fixtures
-src/litellm.ts         reads runs out of a LiteLLM proxy's spend logs   src/import-litellm.ts, src/record-proxy.ts   capture tools
+src/litellm.ts         reads runs out of a LiteLLM proxy's spend logs   src/s3-logs.ts   the same, from its S3 request logs
+src/import-litellm.ts, src/record-proxy.ts   capture tools
 src/app/               the control app (public/ is its frontend)
 docker/                Dockerfile and an example compose file (your own compose.yaml and .env stay untracked)
 suites/<name>/         promptfooconfig.yaml, cases.yaml, examples/ (synthetic fixtures)

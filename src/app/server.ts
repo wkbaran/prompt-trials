@@ -18,12 +18,15 @@ import { conversations, cutFixture, deleteRecordingDir, listRecordingDirs, stepD
 import { promptfooEnv, RunManager } from './runs.ts';
 import { importWindow, recentRuns, setHidden } from './litellm-runs.ts';
 import { makeClient } from '../litellm.ts';
+import { makeS3Client } from '../s3-logs.ts';
 import { createSuite, deleteSuite, getSuite, listSuites, updateSuite } from './suites.ts';
 
 const cfg = loadAppConfig();
 const creds = credentialsFromEnv();
 const runs = new RunManager(cfg);
-const litellm = process.env.LITELLM_URL && process.env.LITELLM_API_KEY ? makeClient(process.env.LITELLM_URL, process.env.LITELLM_API_KEY) : undefined;
+/** Where the Recordings page reads runs from: the proxy's S3 logs when set up (they are complete), else its spend log. */
+const litellm = cfg.s3Logs ? makeS3Client(cfg.s3Logs) : process.env.LITELLM_URL && process.env.LITELLM_API_KEY ? makeClient(process.env.LITELLM_URL, process.env.LITELLM_API_KEY) : undefined;
+const logSource = cfg.s3Logs ? 's3' : 'litellm';
 /** promptfoo's viewer runs on this loopback-only port; the public viewer port is the app's own proxy in front of it. */
 const viewerInternalPort = cfg.viewerPort + 1;
 const PUBLIC = join(import.meta.dirname, 'public');
@@ -195,7 +198,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
     if (!litellm) return send(res, 200, { configured: false, runs: [] });
     if (method === 'GET' && b === 'recent') {
       const days = Math.max(1, Math.min(14, Number(url.searchParams.get('days') ?? 3) || 3));
-      return send(res, 200, { configured: true, runs: await recentRuns(cfg, litellm, days) });
+      return send(res, 200, { configured: true, source: logSource, runs: await recentRuns(cfg, litellm, days) });
     }
     if (method === 'POST' && b === 'hide') {
       const body = await readJson(req);

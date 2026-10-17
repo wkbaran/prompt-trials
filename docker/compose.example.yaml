@@ -19,6 +19,11 @@ services:
       TRIALS_AUTH_PASSWORD: ${TRIALS_AUTH_PASSWORD:?set TRIALS_AUTH_PASSWORD in .env}
       LITELLM_API_KEY: ${LITELLM_API_KEY:-}
       LITELLM_URL: ${LITELLM_URL:-}   # with the key, lets the Recordings page import runs from the proxy's logs
+      S3_LOGS_BUCKET: ${S3_LOGS_BUCKET:-}   # the proxy's S3 request logs; preferred over LITELLM_URL for the Recordings page
+      S3_LOGS_PREFIX: ${S3_LOGS_PREFIX:-proxy}
+      S3_LOGS_REGION: ${S3_LOGS_REGION:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       OLLAMA_URL: ${OLLAMA_URL:-}
       # SHIPPED_SUITES: hide   # uncomment to show only suites made in the app, not the repo's examples
       TZ: ${TZ:-UTC}

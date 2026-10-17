@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parse } from 'yaml';
+import { type S3Source, s3FromEnv } from '../s3-logs.ts';
 
 /** Times when the GPU or the model server is shared with something else (for example a scheduled agent). */
 export interface BusyWindow {
@@ -27,6 +28,8 @@ export interface AppConfig {
   runsDir: string;
   /** Where each suite's private cases live (`<dir>/<suite>.yaml`). Unset: `cases.private.yaml` beside the suite's config. */
   privateCasesDir?: string;
+  /** Where the proxy's S3 request logs are (complete, unlike its spend log). Preferred over LITELLM_URL for the Recordings page. */
+  s3Logs?: Omit<S3Source, 's3'>;
   /** Base URL of the Ollama server, for the "what is loaded" check. */
   ollamaUrl?: string;
   busyWindows: BusyWindow[];
@@ -48,6 +51,7 @@ export function loadAppConfig(path = process.env.PROMPT_TRIALS_CONFIG ?? 'trials
     fixturesDir: user.fixturesDir ?? 'fixtures',
     runsDir: user.runsDir ?? 'output/runs',
     privateCasesDir: process.env.PRIVATE_CASES_DIR ?? user.privateCasesDir,
+    s3Logs: s3FromEnv() ?? user.s3Logs,
     ollamaUrl: process.env.OLLAMA_URL ?? user.ollamaUrl,
     busyWindows: user.busyWindows ?? [],
     lookaheadMinutes: user.lookaheadMinutes ?? 30,

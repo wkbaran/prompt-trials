@@ -272,10 +272,11 @@ function litellmPanel() {
   const showHidden = h('input', { type: 'checkbox', onchange: () => paint() });
   const hiddenCount = h('span');
   const body = h('div');
+  const note = h('p', { class: 'muted small', style: 'margin:.2rem 0 0' }, 'Runs the proxy has logged. Importing copies a run’s requests into a recordings folder.');
   let runs = [];
   const panel = h('section', { class: 'panel stack' },
     h('div', { class: 'row' }, h('div', {}, h('h2', { style: 'margin:0' }, 'Import from LiteLLM'),
-      h('p', { class: 'muted small', style: 'margin:.2rem 0 0' }, 'Runs the proxy has logged. Importing copies a run’s requests into a recordings folder.')),
+      note),
       h('div', { class: 'fit' }, days)),
     h('div', { class: 'row' },
       h('label', { class: 'check fit', style: 'margin:0' }, hideShort, `Hide runs of fewer than ${MIN_RUN} requests`),
@@ -337,7 +338,8 @@ function litellmPanel() {
     body.replaceChildren(h('p', { class: 'muted' }, 'Looking for runs…'));
     try {
       const out = await api(`litellm/recent?days=${days.value}`);
-      if (!out.configured) return body.replaceChildren(h('p', { class: 'muted' }, 'LiteLLM isn’t set up for this app. It needs LITELLM_URL and LITELLM_API_KEY in its environment.'));
+      if (!out.configured) return body.replaceChildren(h('p', { class: 'muted' }, 'LiteLLM isn’t set up for this app. It needs S3_LOGS_BUCKET (the proxy’s S3 request logs, which are complete), or LITELLM_URL and LITELLM_API_KEY (its spend log, which can miss requests), in its environment.'));
+      note.textContent = out.source === 's3' ? 'Runs from the proxy’s S3 request logs. Importing copies a run’s requests into a recordings folder.' : 'Runs from the proxy’s spend log, which can miss requests. Importing copies a run’s requests into a recordings folder.';
       runs = out.runs;
       paint();
     } catch (e) {
